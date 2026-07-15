@@ -16,13 +16,13 @@
 <!-- Google Fonts (graceful system fallback if the request fails) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
 <style>
   :root{
-    --display: 'Orbitron', system-ui, 'Segoe UI', Roboto, sans-serif;
+    --display: 'Fraunces', 'Playfair Display', Georgia, 'Times New Roman', serif;
     --mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
-    --ink: #fff;
+    --ink: #f0e6d2;
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }
@@ -36,13 +36,14 @@
   /* 9:16 stage. Phones (narrower than 9:16) fill the screen edge-to-edge;
      wide screens get a centered portrait column. */
   #stage{
-    position:fixed; inset:0; overflow:hidden; background:#05030a;
+    position:fixed; inset:0; overflow:hidden; background:#0a0704;
+    container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
   }
   @media (min-aspect-ratio: 9/16){
     #stage{
       position:relative; inset:auto;
       height:100dvh; aspect-ratio:9/16; width:auto;
-      box-shadow:0 0 120px rgba(255,45,149,.18);
+      box-shadow:0 0 120px rgba(120,74,34,.15);
     }
   }
 
@@ -56,10 +57,10 @@
   .no-webgl #fallback{
     display:block;
     background:
-      radial-gradient(60% 45% at 30% 25%, #ff2d9599, transparent 60%),
-      radial-gradient(55% 50% at 75% 70%, #ff8a0088, transparent 60%),
-      radial-gradient(70% 60% at 50% 90%, #ffe60066, transparent 60%),
-      #05030a;
+      radial-gradient(60% 45% at 30% 25%, #b87a3488, transparent 60%),
+      radial-gradient(55% 50% at 75% 70%, #9c5a3466, transparent 60%),
+      radial-gradient(70% 60% at 50% 90%, #e8ce8f44, transparent 60%),
+      #0a0704;
     filter:saturate(1.3) blur(4px);
     animation:drift 18s ease-in-out infinite alternate;
   }
@@ -73,7 +74,7 @@
     display:flex; align-items:center; justify-content:center; }
   .beat{
     position:absolute; left:0; right:0;
-    padding:0 8vmin; text-align:center;
+    padding:0 6cqw; text-align:center;
     opacity:0; transform:translateY(2.2rem) scale(.96); filter:blur(8px);
     transition:opacity .9s ease, transform 1.1s cubic-bezier(.2,.8,.2,1), filter 1s ease;
     will-change:opacity,transform,filter;
@@ -82,41 +83,53 @@
 
   .boom{
     font-family:var(--display); font-weight:900;
-    font-size:clamp(3.6rem, 22vmin, 12rem); line-height:.86; letter-spacing:.02em;
-    background:linear-gradient(180deg,#fff, #ffe600 40%, #ff8a00 70%, #ff2d95);
+    font-size:clamp(2.5rem, 16cqw, 8rem); line-height:.86; letter-spacing:0;
+    background:linear-gradient(180deg,#f0dcae, #e0bd7f 42%, #b87a34 72%, #6d3f1a);
     -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 28px #ff2d9577);
+    filter:drop-shadow(0 2px 14px #000000aa) drop-shadow(0 0 22px #b87a3433);
   }
   .years{ font-family:var(--mono); font-weight:700; margin-top:.5rem;
-    font-size:clamp(.9rem,4.5vmin,1.6rem); letter-spacing:.7em; text-indent:.7em;
-    color:#fff; text-shadow:0 0 18px #ff8a00aa; }
+    font-size:clamp(.85rem,3.4cqw,1.5rem); letter-spacing:.5em; text-indent:.5em;
+    color:#f0e6d2; text-shadow:0 2px 10px #000000aa; }
 
   .dates{ font-family:var(--display); font-weight:900;
-    font-size:clamp(1.8rem,9vmin,4.5rem); letter-spacing:.03em;
-    text-shadow:0 0 26px #00d0a0aa, 0 0 60px #ffffff55; }
+    font-size:clamp(1.25rem,7cqw,3.8rem); letter-spacing:.02em;
+    text-shadow:0 2px 12px #000000aa; }
   .sub{ margin-top:1rem; opacity:.85; }
   .mono{ font-family:var(--mono); }
 
   .personal{ font-family:var(--display); font-weight:700;
-    font-size:clamp(1.4rem,6.8vmin,3rem); line-height:1.25;
-    text-shadow:0 0 24px #ff00c8aa; }
+    font-size:clamp(1.05rem,5cqw,2.6rem); line-height:1.3;
+    text-shadow:0 2px 12px #000000aa; }
 
   .urgency{ font-weight:700; line-height:2;
-    font-size:clamp(.85rem,4.2vmin,1.35rem); letter-spacing:.18em;
-    color:#ffe600; text-shadow:0 0 16px #ff8a00cc; }
+    font-size:clamp(.72rem,3cqw,1.2rem); letter-spacing:.12em;
+    color:#e0b56a; text-shadow:0 2px 10px #000000aa; }
 
   .cta-title{ font-family:var(--mono); font-weight:700;
-    font-size:clamp(1.1rem,5.5vmin,2rem); letter-spacing:.4em; text-indent:.4em;
-    text-shadow:0 0 20px #ff2d95cc; }
+    font-size:clamp(.95rem,4cqw,1.9rem); letter-spacing:.3em; text-indent:.3em;
+    text-shadow:0 2px 12px #000000aa; }
 
   .sign{ font-family:var(--display); font-weight:900;
-    font-size:clamp(2.2rem,11vmin,5rem);
-    background:linear-gradient(120deg,#ff2d95,#ff8a00,#ffe600);
+    font-size:clamp(1.7rem,9cqw,4.6rem);
+    background:linear-gradient(120deg,#9c5a34,#d9a566,#e8ce8f);
     -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 22px #ff8a0066); }
-  .place{ margin-top:.8rem; letter-spacing:.35em; text-indent:.35em; opacity:.9;
-    font-size:clamp(.75rem,3.6vmin,1.1rem); }
+    filter:drop-shadow(0 2px 12px #000000aa); }
+  .place{ margin-top:.8rem; letter-spacing:.25em; text-indent:.25em; opacity:.9;
+    font-size:clamp(.68rem,2.8cqw,1.05rem); }
   .replay{ margin-top:2.4rem; opacity:.5; letter-spacing:.3em; font-size:.75rem; }
+
+  /* closing story paragraph — readable, scrollable, legible over the moving smoke */
+  .story{
+    font-family:var(--display); text-align:left; max-width:32em; margin:0 auto;
+    max-height:60cqh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    font-size:clamp(.8rem,3.6cqw,1.12rem); line-height:1.65; color:#efe4cf;
+    background:rgba(4,2,9,.8); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
+    border:1px solid #ffffff26; border-radius:14px; padding:1.3em 1.4em;
+    box-shadow:0 10px 40px #000000aa; text-shadow:0 1px 3px #000000cc;
+  }
+  .story p{ margin:0 0 .9em; }
+  .story .replay{ text-align:center; margin:1.2rem 0 0; }
 
   /* persistent save-the-date footer (from CTA beat onward) */
   #cta-footer{
@@ -128,29 +141,29 @@
   #cta-footer.show{ opacity:1; transform:none; pointer-events:auto; }
   #cta-footer .row{ display:flex; gap:.7rem; flex-wrap:wrap; justify-content:center; }
   .btn{
-    font-family:var(--mono); font-weight:700; font-size:clamp(.8rem,3.6vmin,1rem);
-    letter-spacing:.05em; color:#0a0010; cursor:pointer;
+    font-family:var(--mono); font-weight:700; font-size:clamp(.78rem,3.2cqw,1rem);
+    letter-spacing:.05em; color:#241408; cursor:pointer;
     border:0; border-radius:999px; padding:.85em 1.4em;
-    background:linear-gradient(120deg,#ffe600,#ff8a00);
-    box-shadow:0 6px 30px #ff8a0066, inset 0 0 0 1px #ffffff44;
+    background:linear-gradient(120deg,#d9a566,#b87a34);
+    box-shadow:0 6px 24px #6d3f1a55, inset 0 0 0 1px #ffffff2e;
   }
-  .btn.alt{ color:#fff; background:linear-gradient(120deg,#ff2d95,#ff00c8); box-shadow:0 6px 30px #ff2d9566; }
+  .btn.alt{ color:#f0e6d2; background:linear-gradient(120deg,#9c5a34,#6d3f1a); box-shadow:0 6px 24px #2c211a88; }
   .btn:active{ transform:translateY(1px); }
 
   /* tap-to-begin gate */
   #gate{
     position:absolute; inset:0; z-index:10; cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.2rem;
-    background:radial-gradient(60% 60% at 50% 45%, #0b0618cc, #04020acc 70%, #000 100%);
-    transition:opacity .7s ease; text-align:center; padding:0 10vmin;
+    background:radial-gradient(60% 60% at 50% 45%, #100a04cc, #060402cc 70%, #000 100%);
+    transition:opacity .7s ease; text-align:center; padding:0 8cqw;
   }
   #gate.hide{ opacity:0; pointer-events:none; }
   #gate .play{ font-family:var(--display); font-weight:900; letter-spacing:.05em;
-    font-size:clamp(1.4rem,8vmin,3rem);
-    background:linear-gradient(120deg,#ff2d95,#ff8a00,#ffe600);
+    font-size:clamp(1.3rem,7cqw,3rem);
+    background:linear-gradient(120deg,#b87a34,#e8ce8f);
     -webkit-background-clip:text; background-clip:text; color:transparent;
     animation:pulse 1.8s ease-in-out infinite; }
-  #gate .hint{ font-family:var(--mono); font-size:clamp(.7rem,3.4vmin,.95rem);
+  #gate .hint{ font-family:var(--mono); font-size:clamp(.68rem,3cqw,.95rem);
     letter-spacing:.25em; opacity:.7; line-height:2; }
   @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:.9 } 50%{ transform:scale(1.06); opacity:1 } }
 
@@ -166,7 +179,7 @@
     padding:.42em .8em; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
   }
   #tweaks .chip{ display:flex; align-items:center; gap:.5em; cursor:default; }
-  #tweaks input[type=range]{ width:82px; accent-color:#ff2d95; }
+  #tweaks input[type=range]{ width:82px; accent-color:#b87a34; }
   .clean #tweaks{ display:none; }
 
   /* debug scrubber (?debug) */
@@ -174,7 +187,7 @@
     padding:.6rem 1rem; background:#000a; font-family:var(--mono); font-size:.7rem;
     align-items:center; gap:.6rem; }
   #debug.on{ display:flex; }
-  #debug input[type=range]{ flex:1; accent-color:#ffe600; }
+  #debug input[type=range]{ flex:1; accent-color:#b87a34; }
 
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
@@ -210,7 +223,15 @@
     <div class="beat" data-beat="6">
       <div class="sign">Yolan's 30th</div>
       <div class="place mono">Idanha-a-Nova · Portugal</div>
-      <div class="replay mono">tap to replay</div>
+    </div>
+    <div class="beat" data-beat="7">
+      <div class="story mono">
+        <p>Boom Festival is Portugal's legendary biennial gathering — born in 1997 and held every two years since on the banks of the Marechal Carmona Dam in Idanha-a-Nova, it's far more than a music event, blending psychedelic and psytrance sound with immersive art, sustainability innovation and a community-driven ethos, all run with zero commercial branding and famously free of corporate sponsors.</p>
+        <p>The next edition runs 18 to 25 July 2027, under a full moon, and marks 30 years of cosmic psychedelic dancing — landing in the very same year I turn 30, which makes it non-negotiable.</p>
+        <p>Come mentally prepared for a full week of camping under the blazing Alentejo sun (July temperatures can top 40°C), sunrise sets and communal ritual, so pack light, hydrate hard, and be ready to properly disconnect.</p>
+        <p>One catch: Boom has been selling out since 2014, historically within hours, and ticket sales open after summer 2026 — so if you're in, lock it in your calendar now, because this one only comes around every two years and this edition is the big one.</p>
+        <div class="replay">▶ tap to replay</div>
+      </div>
     </div>
   </div>
 
@@ -222,7 +243,7 @@
   </div>
 
   <aside id="tweaks">
-    <button id="tw-palette">◑ Electric Sunset</button>
+    <button id="tw-palette">◑ Desert Dune</button>
     <button id="tw-sound">♪ sound on</button>
     <label class="chip">tilt <input id="tw-tilt" type="range" min="0" max="2" step="0.1" value="1"></label>
   </aside>
@@ -248,10 +269,10 @@
 const CONFIG = {
   BPM: 146,
   palettes: {
-    sunset: { label:'Electric Sunset', stops:['#ff2d95','#ff8a00','#ffe600'] },
-    jungle: { label:'Acid Jungle',     stops:['#aaff00','#00d0a0','#ff00c8'] },
+    dune:  { label:'Desert Dune', stops:['#3d2a17','#b87a34','#e8ce8f'] },  // umber → ochre → pale sand
+    ember: { label:'Dusk Ember',  stops:['#2c211a','#9c5a34','#d9a566'] },  // charcoal → terracotta → dusty gold
   },
-  defaultPalette: 'sunset',
+  defaultPalette: 'dune',
   tiltSensitivity: 1.0,          // default; user-tunable
   event: {
     title:   "Yolan's 30th · Boom Festival 2027",
@@ -269,6 +290,7 @@ const CONFIG = {
     { id:'urgency',  dur:5 },
     { id:'cta',      dur:6 },
     { id:'signoff',  dur:5 },
+    { id:'story',    dur:14 },   // the full read; the arc holds here at the end
   ],
 };
 
@@ -291,6 +313,30 @@ const hexToRgb01 = h => {
   const n = parseInt(h.slice(1), 16);
   return [ (n>>16 & 255)/255, (n>>8 & 255)/255, (n & 255)/255 ];
 };
+
+// Easing + interpolate lifted from the uploaded animations-v2.jsx (framework-agnostic
+// bits; the rest of that file is a React/host-bound scene engine that can't run here).
+const Easing = {
+  easeOutCubic:   t => (--t) * t * t + 1,
+  easeInOutCubic: t => (t < 0.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2) + 1),
+  easeInOutSine:  t => -(Math.cos(Math.PI * t) - 1) / 2,
+  easeOutBack:    t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
+};
+// interpolate([0,.5,1], [0,1,0], ease?) -> fn(t): maps t across keyframes to output values.
+function interpolate(input, output, ease = (t=>t)){
+  return t => {
+    if (t <= input[0]) return output[0];
+    if (t >= input[input.length-1]) return output[output.length-1];
+    for (let i = 0; i < input.length-1; i++){
+      if (t >= input[i] && t <= input[i+1]){
+        const span = input[i+1] - input[i];
+        const local = span === 0 ? 0 : (t - input[i]) / span;
+        return output[i] + (output[i+1] - output[i]) * ease(local);
+      }
+    }
+    return output[output.length-1];
+  };
+}
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (params.has('clean')) document.body.classList.add('clean');
@@ -411,21 +457,29 @@ const plasma = (() => {
       vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
       uv += uTilt * 0.15;
       uv += uSmear * 0.6;
-      float t = uTime * 0.06;
-      // domain-warped fbm (iq)
-      vec2 q = vec2(fbm(uv + t), fbm(uv + vec2(5.2, 1.3)));
-      vec2 r = vec2(fbm(uv + 2.0 * q + vec2(1.7, 9.2) + 0.15 * t),
-                    fbm(uv + 2.0 * q + vec2(8.3, 2.8) + 0.12 * t));
-      float f = fbm(uv + 2.0 * r);
+      // domain-warped fbm advected by a drifting flow → the field physically moves like
+      // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
+      // seamlessly (no reshuffle at the wrap) and stays small (mediump-safe).
+      float w = uTime * 6.2831853 / 60.0;
+      vec2 flow = 0.18 * vec2(sin(w), 1.25 * cos(w)) + 0.10 * vec2(cos(2.0 * w), sin(2.0 * w));
+      flow *= 1.0 + 0.25 * uAmp;                       // billows on the pulse
+      vec2 q = vec2(fbm(uv + flow), fbm(uv + vec2(5.2, 1.3) + flow * 0.7));
+      // curl: swirl the warp domain by a noise-driven angle → curling smoke
+      float ang = 6.2831853 * fbm(uv * 0.7 + q * 0.5 + flow);
+      mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+      vec2 warp = rot * (1.8 * q);
+      vec2 r = vec2(fbm(uv + warp + vec2(1.7, 9.2) + flow.yx * 1.3),
+                    fbm(uv + warp + vec2(8.3, 2.8) - flow * 1.1));
+      float f = fbm(uv + 1.8 * r + flow * 1.5);
       float d = length(uv - uPointer * 0.5);
       f += 0.10 * exp(-d * 3.0);                       // pointer glow
       float shade = smoothstep(0.12, 0.9, f + 0.3 * length(r));
       vec3 col = palette(f + 0.15 * uAmp);
       col *= shade * shade;                            // deep near-black valleys, glowing veins
-      col += uAmp * 0.18 * palette(0.65);              // beat bloom, in-palette
-      col *= 0.6 + 0.4 * uProgress;                    // ramp intensity across the arc
+      col += uAmp * 0.12 * palette(0.65);              // beat bloom, in-palette
+      col *= 0.5 + 0.4 * uProgress;                    // ramp intensity across the arc
       float vig = smoothstep(1.25, 0.25, length(uv));  // vignette
-      col *= 0.4 + 0.6 * vig;
+      col *= 0.34 + 0.56 * vig;
       gl_FragColor = vec4(col, 1.0);
     }`;
 
@@ -485,7 +539,7 @@ const mandala = (() => {
     const cx = W / 2, cy = H / 2;
     const base = Math.min(W, H);
     // bloom: single point in ignition, grows into the full mandala
-    const bloom = state.started ? clamp(state.sceneTime / BEATS[IDX.boom].start, 0, 1) : 0.0;
+    const bloom = state.started ? Easing.easeOutCubic(clamp(state.sceneTime / BEATS[IDX.boom].start, 0, 1)) : 0.0;
     if (bloom <= 0.001){
       // the seed spark
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, base * 0.08);
@@ -494,60 +548,67 @@ const mandala = (() => {
       return;
     }
     const amp = state.amp;
-    const R = base * (0.16 + 0.20 * bloom) * (1 + 0.04 * amp);
     const col = CONFIG.palettes[state.palette].stops;
+    const a2 = v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.translate(cx, cy);
-    ctx.rotate(state.ambientTime * 0.06);
+    ctx.rotate(state.ambientTime * 0.05);
 
-    // flower-of-life ring (7 circles: centre + hex)
-    ctx.lineWidth = 1 + amp * 1.2;
-    ctx.strokeStyle = col[1] + 'cc';
-    ctx.shadowColor = col[1]; ctx.shadowBlur = 14 + amp * 22;
-    const fr = R * 0.5;
-    drawCircle(0, 0, fr);
-    for (let k = 0; k < 6; k++){
-      const a = k * Math.PI / 3;
-      drawCircle(Math.cos(a) * fr, Math.sin(a) * fr, fr);
-    }
-
-    // N-fold radial burst
-    ctx.strokeStyle = col[0] + 'aa';
-    ctx.shadowColor = col[0];
-    for (let k = 0; k < N; k++){
-      ctx.rotate((Math.PI * 2) / N);
-      ctx.beginPath();
-      ctx.moveTo(0, R * 0.2);
-      ctx.quadraticCurveTo(R * 0.42, R * 0.55, 0, R * 1.05 * bloom);
-      ctx.quadraticCurveTo(-R * 0.42, R * 0.55, 0, R * 0.2);
-      ctx.stroke();
-    }
-    // concentric rings
-    ctx.strokeStyle = col[2] + '66';
-    ctx.shadowColor = col[2];
-    for (let ring = 1; ring <= 3; ring++){
-      drawPolygon(0, 0, R * (0.35 + ring * 0.22) * bloom, N * 2);
+    // Infinite emanation: the motif repeated at exponentially growing scales, phase-staggered so
+    // rings are perpetually born faint at the centre and fade out past the rim (seamless loop).
+    const LAYERS = 5, zoom = state.ambientTime * 0.06;
+    for (let L = 0; L < LAYERS; L++){
+      const p = ((zoom + L / LAYERS) % 1 + 1) % 1;
+      const R = base * 0.12 * Math.pow(6.0, p);
+      drawMotif(R, Math.sin(p * Math.PI) * bloom);
     }
     ctx.restore();
 
     // full-moon accent during the DATES beat
     const moon = state.beat === IDX.dates
-      ? Math.sin(clamp((state.sceneTime - BEATS[IDX.dates].start) / BEATS[IDX.dates].dur, 0, 1) * Math.PI)
+      ? interpolate([0, 0.5, 1], [0, 1, 0], Easing.easeInOutSine)(
+          clamp((state.sceneTime - BEATS[IDX.dates].start) / BEATS[IDX.dates].dur, 0, 1))
       : 0;
     if (moon > 0.01){
       const mx = cx, my = cy - base * 0.28, mr = base * 0.12;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       const g = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2.4);
-      g.addColorStop(0, `rgba(255,255,255,${0.9 * moon})`);
-      g.addColorStop(0.5, `rgba(255,240,210,${0.5 * moon})`);
+      g.addColorStop(0, `rgba(245,236,214,${0.7 * moon})`);
+      g.addColorStop(0.5, `rgba(216,168,110,${0.38 * moon})`);
       g.addColorStop(1, 'transparent');
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, mr * 2.4, 0, 7); ctx.fill();
       ctx.restore();
     }
 
+    // ponytail: 5 shadowed motif layers/frame; if it stutters on old phones, drop LAYERS or shadowBlur.
+    function drawMotif(R, alpha){
+      if (alpha <= 0.004) return;
+      ctx.lineWidth = 1 + amp * 1.0;
+      ctx.shadowBlur = 5 + amp * 10;
+      // flower-of-life ring (7 circles: centre + hex)
+      ctx.strokeStyle = col[1] + a2(alpha * 0.5); ctx.shadowColor = col[1];
+      const fr = R * 0.5;
+      drawCircle(0, 0, fr);
+      for (let k = 0; k < 6; k++){ const a = k * Math.PI / 3; drawCircle(Math.cos(a) * fr, Math.sin(a) * fr, fr); }
+      // N-fold petals
+      ctx.strokeStyle = col[0] + a2(alpha * 0.42); ctx.shadowColor = col[0];
+      ctx.save();
+      for (let k = 0; k < N; k++){
+        ctx.rotate((Math.PI * 2) / N);
+        ctx.beginPath();
+        ctx.moveTo(0, R * 0.2);
+        ctx.quadraticCurveTo(R * 0.42, R * 0.55, 0, R * 1.05);
+        ctx.quadraticCurveTo(-R * 0.42, R * 0.55, 0, R * 0.2);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // concentric polygons
+      ctx.strokeStyle = col[2] + a2(alpha * 0.3); ctx.shadowColor = col[2];
+      for (let ring = 1; ring <= 3; ring++){ drawPolygon(0, 0, R * (0.35 + ring * 0.22), N * 2); }
+    }
     function drawCircle(x, y, r){ ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); }
     function drawPolygon(x, y, r, sides){
       ctx.beginPath();
@@ -758,7 +819,7 @@ function initTweaks(){
   const savedTilt = parseFloat(localStorage.getItem('ym_tilt'));
   if (!isNaN(savedTilt)){ CONFIG.tiltSensitivity = savedTilt; $('#tw-tilt').value = savedTilt; }
 
-  $('#tw-palette').onclick = () => applyPalette(state.palette === 'sunset' ? 'jungle' : 'sunset');
+  $('#tw-palette').onclick = () => applyPalette(state.palette === 'dune' ? 'ember' : 'dune');
   $('#tw-sound').onclick   = () => applyMuted(!state.muted);
   $('#tw-tilt').oninput = e => {
     CONFIG.tiltSensitivity = parseFloat(e.target.value);
@@ -830,7 +891,10 @@ function frame(now){
   state.sceneTime   = narrativeAt(now);
 
   // amp: live audio energy, else deterministic pulse
-  state.amp = lerp(state.amp, audio.live ? audio.readAmp() : synthPulse(state.ambientTime), 0.35);
+  // pump is always on: deterministic synth pulse is the floor, live music energy adds on top
+  const pulse = synthPulse(state.ambientTime);
+  const live  = audio.live ? audio.readAmp() : 0;
+  state.amp = lerp(state.amp, Math.max(pulse, live), 0.35);
 
   // smooth tilt, decay smear
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
