@@ -45,7 +45,7 @@ const hasWebGL = await page.evaluate(() => window.__hasWebGL);
 hasWebGL ? ok('WebGL context created') : fail('WebGL unavailable (CSS fallback would engage)');
 
 // 2. Each beat renders a non-black frame; capture poster.png from the BOOM beat.
-const BEATS = ['ignition','boom','dates','personal','urgency','cta','signoff'];
+const BEATS = ['ignition','boom','dates','personal','urgency','cta','signoff','story'];
 for (let i = 0; i < BEATS.length; i++){
   await page.evaluate(n => window.__seek(n), i);
   await page.waitForTimeout(180);
