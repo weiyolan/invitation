@@ -21,6 +21,9 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({
   viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1, acceptDownloads: true,
 });
+// Block external requests (Google Fonts etc.) so a flaky/blocked network can't stall load;
+// the page falls back to system fonts by design and the canvas doesn't need the network.
+await ctx.route('**/*', r => r.request().url().startsWith('file:') ? r.continue() : r.abort());
 const page = await ctx.newPage();
 
 const errors = [];
@@ -32,8 +35,8 @@ page.on('console', m => {
     errors.push('console: ' + m.text());
 });
 
-await page.goto(pageUrl, { waitUntil: 'load' });
-await page.waitForTimeout(300);
+await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(400);
 // Remove the gate + hide the tweaks panel so screenshots (incl. poster.png) are clean.
 await page.evaluate(() => {
   document.querySelector('#gate').style.display = 'none';
@@ -49,11 +52,12 @@ const BEATS = ['ignition','boom','dates','personal','urgency','cta','signoff','s
 for (let i = 0; i < BEATS.length; i++){
   await page.evaluate(n => window.__seek(n), i);
   await page.waitForTimeout(180);
+  // JPEG throughout (grain makes PNGs huge/slow); poster.jpg from the BOOM beat at higher quality
   const buf = await page.screenshot(
-    i === 1 ? { path: join(root, 'poster.jpg'), type: 'jpeg', quality: 82 } : undefined
+    i === 1 ? { path: join(root, 'poster.jpg'), type: 'jpeg', quality: 82 }
+            : { type: 'jpeg', quality: 55 }
   );
-  // a fully-black 1080x1920 PNG compresses to a few KB; a plasma frame is far larger
-  buf.length > 30000
+  buf.length > 12000
     ? ok(`beat ${i} (${BEATS[i]}) rendered — ${(buf.length/1024|0)}KB`)
     : fail(`beat ${i} (${BEATS[i]}) looks blank — ${buf.length} bytes`);
 }

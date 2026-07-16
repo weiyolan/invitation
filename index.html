@@ -22,7 +22,8 @@
   :root{
     --display: 'Fraunces', 'Playfair Display', Georgia, 'Times New Roman', serif;
     --mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
-    --ink: #f0e6d2;
+    --ink: #e7efee;
+    --tx: 0; --ty: 0; --amp: 0;   /* live tilt (-1..1) + music pulse (0..1), set each frame */
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }
@@ -36,14 +37,14 @@
   /* 9:16 stage. Phones (narrower than 9:16) fill the screen edge-to-edge;
      wide screens get a centered portrait column. */
   #stage{
-    position:fixed; inset:0; overflow:hidden; background:#0a0704;
+    position:fixed; inset:0; overflow:hidden; background:#04100e;
     container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
   }
   @media (min-aspect-ratio: 9/16){
     #stage{
       position:relative; inset:auto;
       height:100dvh; aspect-ratio:9/16; width:auto;
-      box-shadow:0 0 120px rgba(120,74,34,.15);
+      box-shadow:0 0 120px rgba(70,50,120,.16);
     }
   }
 
@@ -57,10 +58,10 @@
   .no-webgl #fallback{
     display:block;
     background:
-      radial-gradient(60% 45% at 30% 25%, #b87a3488, transparent 60%),
-      radial-gradient(55% 50% at 75% 70%, #9c5a3466, transparent 60%),
-      radial-gradient(70% 60% at 50% 90%, #e8ce8f44, transparent 60%),
-      #0a0704;
+      radial-gradient(60% 45% at 30% 25%, #0e6a5f88, transparent 60%),
+      radial-gradient(55% 50% at 75% 70%, #3a1d5c88, transparent 60%),
+      radial-gradient(70% 60% at 50% 90%, #2f9d8f44, transparent 60%),
+      #04100e;
     filter:saturate(1.3) blur(4px);
     animation:drift 18s ease-in-out infinite alternate;
   }
@@ -71,6 +72,7 @@
 
   /* --- text overlay --- */
   #overlay{ position:absolute; inset:0; z-index:2; pointer-events:none;
+    perspective:900px;
     display:flex; align-items:center; justify-content:center; }
   .beat{
     position:absolute; left:0; right:0;
@@ -81,16 +83,32 @@
   }
   .beat.active{ opacity:1; transform:none; filter:none; }
 
+  /* headings react to device tilt — parallax + slight 3D (identity at tilt 0) */
+  .beat.active .boom, .beat.active .dates, .beat.active .personal, .beat.active .sign{
+    transform:translate(calc(var(--tx)*10px), calc(var(--ty)*-10px))
+              rotateX(calc(var(--ty)*-5deg)) rotateY(calc(var(--tx)*5deg));
+    transform-style:preserve-3d;
+  }
+
   .boom{
     font-family:var(--display); font-weight:900;
     font-size:clamp(2.5rem, 16cqw, 8rem); line-height:.86; letter-spacing:0;
-    background:linear-gradient(180deg,#f0dcae, #e0bd7f 42%, #b87a34 72%, #6d3f1a);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 2px 14px #000000aa) drop-shadow(0 0 22px #b87a3433);
+    display:inline-flex;
   }
+  .boom span{
+    display:inline-block;
+    background:linear-gradient(150deg,#e6fbf5, #54c9b6 40%, #2b8f86 68%, #6b4a9c);
+    background-size:180% 180%; background-position:calc(50% + var(--tx)*35%) 50%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 2px 14px #000000aa) drop-shadow(0 0 20px #3f8f8433);
+    transform:translate(calc(var(--tx)*var(--d,4px)), calc(var(--ty)*var(--d,4px)*-0.5));
+    will-change:transform,background-position;
+  }
+  .boom span:nth-child(1){ --d:7px } .boom span:nth-child(2){ --d:3px }
+  .boom span:nth-child(3){ --d:3px } .boom span:nth-child(4){ --d:7px }
   .years{ font-family:var(--mono); font-weight:700; margin-top:.5rem;
     font-size:clamp(.85rem,3.4cqw,1.5rem); letter-spacing:.5em; text-indent:.5em;
-    color:#f0e6d2; text-shadow:0 2px 10px #000000aa; }
+    color:#e7efee; text-shadow:0 2px 10px #000000aa; }
 
   .dates{ font-family:var(--display); font-weight:900;
     font-size:clamp(1.25rem,7cqw,3.8rem); letter-spacing:.02em;
@@ -104,7 +122,7 @@
 
   .urgency{ font-weight:700; line-height:2;
     font-size:clamp(.72rem,3cqw,1.2rem); letter-spacing:.12em;
-    color:#e0b56a; text-shadow:0 2px 10px #000000aa; }
+    color:#8ad6c6; text-shadow:0 2px 10px #000000aa; }
 
   .cta-title{ font-family:var(--mono); font-weight:700;
     font-size:clamp(.95rem,4cqw,1.9rem); letter-spacing:.3em; text-indent:.3em;
@@ -112,75 +130,86 @@
 
   .sign{ font-family:var(--display); font-weight:900;
     font-size:clamp(1.7rem,9cqw,4.6rem);
-    background:linear-gradient(120deg,#9c5a34,#d9a566,#e8ce8f);
+    background:linear-gradient(120deg,#6b4a9c,#3fb9a6,#7fe9d6);
+    background-size:180% 180%; background-position:calc(50% + var(--tx)*30%) 50%;
     -webkit-background-clip:text; background-clip:text; color:transparent;
     filter:drop-shadow(0 2px 12px #000000aa); }
   .place{ margin-top:.8rem; letter-spacing:.25em; text-indent:.25em; opacity:.9;
     font-size:clamp(.68rem,2.8cqw,1.05rem); }
   .replay{ margin-top:2.4rem; opacity:.5; letter-spacing:.3em; font-size:.75rem; }
 
-  /* closing story paragraph — readable, scrollable, legible over the moving smoke */
+  /* closing story — full-screen auto slide-up (credits roll) */
+  .beat[data-beat="7"]{ top:0; bottom:0; padding:0; }
   .story{
-    font-family:var(--display); text-align:left; max-width:32em; margin:0 auto;
-    max-height:60cqh; overflow-y:auto; -webkit-overflow-scrolling:touch;
-    font-size:clamp(.8rem,3.6cqw,1.12rem); line-height:1.65; color:#efe4cf;
-    background:rgba(4,2,9,.8); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
-    border:1px solid #ffffff26; border-radius:14px; padding:1.3em 1.4em;
-    box-shadow:0 10px 40px #000000aa; text-shadow:0 1px 3px #000000cc;
+    position:absolute; inset:0; overflow:hidden;
+    font-family:var(--display); color:#e7efee;
+    background:radial-gradient(125% 85% at 50% 50%, rgba(2,7,10,.30), rgba(2,7,10,.85));
+    -webkit-mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent);
+    mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent);
   }
-  .story p{ margin:0 0 .9em; }
-  .story .replay{ text-align:center; margin:1.2rem 0 0; }
+  .story-roll{
+    position:absolute; left:50%; top:0; width:min(26em, 84cqw);
+    transform:translate(-50%, 92cqh);
+    text-align:left; font-size:clamp(.95rem,4.2cqw,1.3rem); line-height:1.72;
+    text-shadow:0 1px 4px #000000cc;
+  }
+  .beat[data-beat="7"].active .story-roll{ animation:credits 30s linear forwards; }
+  @keyframes credits{ from{ transform:translate(-50%,92cqh) } to{ transform:translate(-50%,-42cqh) } }
+  .story-roll p{ margin:0 0 1.1em; }
+  .story-roll .replay{ text-align:center; margin:1.8rem 0 30cqh; opacity:.5;
+    font-family:var(--mono); letter-spacing:.3em; font-size:.8rem; }
 
-  /* persistent save-the-date footer (from CTA beat onward) */
+  /* save-the-date — minimal text controls, pinned; pumps with the music */
   #cta-footer{
-    position:absolute; left:0; right:0; bottom:max(6vmin, env(safe-area-inset-bottom));
-    z-index:3; display:flex; flex-direction:column; align-items:center; gap:.9rem;
-    opacity:0; transform:translateY(1rem); pointer-events:none;
-    transition:opacity .8s ease, transform .8s ease;
+    position:absolute; left:0; right:0; bottom:max(7vmin, env(safe-area-inset-bottom));
+    z-index:4; display:flex; flex-direction:column; align-items:center; gap:.55rem;
+    font-family:var(--mono); opacity:0; pointer-events:none; transition:opacity .8s ease;
+    transform:scale(calc(1 + var(--amp)*0.05)); transform-origin:bottom center;
   }
-  #cta-footer.show{ opacity:1; transform:none; pointer-events:auto; }
-  #cta-footer .row{ display:flex; gap:.7rem; flex-wrap:wrap; justify-content:center; }
-  .btn{
-    font-family:var(--mono); font-weight:700; font-size:clamp(.78rem,3.2cqw,1rem);
-    letter-spacing:.05em; color:#241408; cursor:pointer;
-    border:0; border-radius:999px; padding:.85em 1.4em;
-    background:linear-gradient(120deg,#d9a566,#b87a34);
-    box-shadow:0 6px 24px #6d3f1a55, inset 0 0 0 1px #ffffff2e;
+  #cta-footer.show{ opacity:calc(.72 + var(--amp)*.28); pointer-events:auto; }
+  .cta-label{ font-size:clamp(.6rem,2.6cqw,.8rem); letter-spacing:.42em; text-indent:.42em; color:#8ad6c6; }
+  .cta-links{ display:flex; align-items:center; gap:.7em; font-size:clamp(.72rem,3.1cqw,.95rem); }
+  .cta-links a, .cta-links button{
+    font-family:var(--mono); color:#e7efee; background:none; border:0; cursor:pointer;
+    padding:.15em 0; border-bottom:1px solid #e7efee55; letter-spacing:.05em;
+    transition:color .2s, border-color .2s;
   }
-  .btn.alt{ color:#f0e6d2; background:linear-gradient(120deg,#9c5a34,#6d3f1a); box-shadow:0 6px 24px #2c211a88; }
-  .btn:active{ transform:translateY(1px); }
+  .cta-links a:hover, .cta-links button:hover{ color:#7fe9d6; border-color:#7fe9d6; }
+  .cta-sep{ opacity:.35; }
 
   /* tap-to-begin gate */
   #gate{
     position:absolute; inset:0; z-index:10; cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.2rem;
-    background:radial-gradient(60% 60% at 50% 45%, #100a04cc, #060402cc 70%, #000 100%);
+    background:radial-gradient(60% 60% at 50% 45%, #08201ccc, #04100ecc 70%, #000 100%);
     transition:opacity .7s ease; text-align:center; padding:0 8cqw;
   }
   #gate.hide{ opacity:0; pointer-events:none; }
   #gate .play{ font-family:var(--display); font-weight:900; letter-spacing:.05em;
     font-size:clamp(1.3rem,7cqw,3rem);
-    background:linear-gradient(120deg,#b87a34,#e8ce8f);
+    background:linear-gradient(120deg,#6b4a9c,#3fb9a6,#7fe9d6);
     -webkit-background-clip:text; background-clip:text; color:transparent;
     animation:pulse 1.8s ease-in-out infinite; }
   #gate .hint{ font-family:var(--mono); font-size:clamp(.68rem,3cqw,.95rem);
     letter-spacing:.25em; opacity:.7; line-height:2; }
   @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:.9 } 50%{ transform:scale(1.06); opacity:1 } }
 
-  /* tweaks panel */
-  #tweaks{
-    position:absolute; top:max(3vmin, env(safe-area-inset-top)); right:3vmin; z-index:5;
-    display:flex; flex-direction:column; gap:.55rem; align-items:flex-end;
-    font-family:var(--mono); font-size:.72rem; letter-spacing:.08em;
+  /* volume-bar hint — rising equalizer bars, "turn up your device"; tap to dismiss. Pumps with music. */
+  #vol-hint{
+    position:absolute; top:max(4vmin, env(safe-area-inset-top)); right:5vmin; z-index:6;
+    display:none; align-items:flex-end; gap:3px; height:24px; padding:6px; cursor:pointer;
+    opacity:0; transition:opacity .6s ease;
+    transform:scaleY(calc(1 + var(--amp)*0.4)); transform-origin:bottom;
   }
-  #tweaks button, #tweaks .chip{
-    font-family:var(--mono); font-size:.72rem; color:#fff; cursor:pointer;
-    background:#ffffff14; border:1px solid #ffffff33; border-radius:999px;
-    padding:.42em .8em; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
-  }
-  #tweaks .chip{ display:flex; align-items:center; gap:.5em; cursor:default; }
-  #tweaks input[type=range]{ width:82px; accent-color:#b87a34; }
-  .clean #tweaks{ display:none; }
+  #vol-hint.show{ display:flex; opacity:.85; }
+  #vol-hint.hide{ opacity:0; pointer-events:none; }
+  #vol-hint i{ width:4px; height:20%; border-radius:2px;
+    background:linear-gradient(#7fe9d6,#6b4a9c); animation:volrise 1.6s ease-in-out infinite; }
+  #vol-hint i:nth-child(2){ animation-delay:.2s }
+  #vol-hint i:nth-child(3){ animation-delay:.4s }
+  #vol-hint i:nth-child(4){ animation-delay:.6s }
+  @keyframes volrise{ 0%{height:15%} 50%{height:100%} 100%{height:15%} }
+  .clean #vol-hint{ display:none !important; }
 
   /* debug scrubber (?debug) */
   #debug{ position:absolute; left:0; right:0; bottom:0; z-index:9; display:none;
@@ -192,6 +221,9 @@
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
     .no-webgl #fallback{ animation:none; }
+    .beat[data-beat="7"].active .story-roll{ animation:none; transform:translate(-50%,4cqh); }
+    .story{ overflow-y:auto; }
+    #vol-hint i{ animation:none; height:60%; }
   }
 </style>
 </head>
@@ -204,7 +236,7 @@
   <div id="overlay">
     <div class="beat" data-beat="0"></div>
     <div class="beat" data-beat="1">
-      <div class="boom">BOOM</div>
+      <div class="boom"><span>B</span><span>O</span><span>O</span><span>M</span></div>
       <div class="years">30 YEARS</div>
     </div>
     <div class="beat" data-beat="2">
@@ -225,28 +257,30 @@
       <div class="place mono">Idanha-a-Nova · Portugal</div>
     </div>
     <div class="beat" data-beat="7">
-      <div class="story mono">
-        <p>Boom Festival is Portugal's legendary biennial gathering — born in 1997 and held every two years since on the banks of the Marechal Carmona Dam in Idanha-a-Nova, it's far more than a music event, blending psychedelic and psytrance sound with immersive art, sustainability innovation and a community-driven ethos, all run with zero commercial branding and famously free of corporate sponsors.</p>
-        <p>The next edition runs 18 to 25 July 2027, under a full moon, and marks 30 years of cosmic psychedelic dancing — landing in the very same year I turn 30, which makes it non-negotiable.</p>
-        <p>Come mentally prepared for a full week of camping under the blazing Alentejo sun (July temperatures can top 40°C), sunrise sets and communal ritual, so pack light, hydrate hard, and be ready to properly disconnect.</p>
-        <p>One catch: Boom has been selling out since 2014, historically within hours, and ticket sales open after summer 2026 — so if you're in, lock it in your calendar now, because this one only comes around every two years and this edition is the big one.</p>
-        <div class="replay">▶ tap to replay</div>
+      <div class="story">
+        <div class="story-roll">
+          <p>Boom Festival is Portugal's legendary biennial gathering — born in 1997 and held every two years since on the banks of the Marechal Carmona Dam in Idanha-a-Nova, it's far more than a music event, blending psychedelic and psytrance sound with immersive art, sustainability innovation and a community-driven ethos, all run with zero commercial branding and famously free of corporate sponsors.</p>
+          <p>The next edition runs 18 to 25 July 2027, under a full moon, and marks 30 years of cosmic psychedelic dancing — landing in the very same year I turn 30, which makes it non-negotiable.</p>
+          <p>Come mentally prepared for a full week of camping under the blazing Alentejo sun (July temperatures can top 40°C), sunrise sets and communal ritual, so pack light, hydrate hard, and be ready to properly disconnect.</p>
+          <p>One catch: Boom has been selling out since 2014, historically within hours, and ticket sales open after summer 2026 — so if you're in, lock it in your calendar now, because this one only comes around every two years and this edition is the big one.</p>
+          <div class="replay">▶ tap to replay</div>
+        </div>
       </div>
     </div>
   </div>
 
   <div id="cta-footer">
-    <div class="row">
-      <a class="btn" id="btn-gcal" target="_blank" rel="noopener">＋ Google Calendar</a>
-      <button class="btn alt" id="btn-ics">↓ .ics file</button>
+    <div class="cta-label">SAVE THE DATE</div>
+    <div class="cta-links">
+      <a id="btn-gcal" target="_blank" rel="noopener">Google Calendar ↗</a>
+      <span class="cta-sep">·</span>
+      <button id="btn-ics">.ics ↓</button>
     </div>
   </div>
 
-  <aside id="tweaks">
-    <button id="tw-palette">◑ Desert Dune</button>
-    <button id="tw-sound">♪ sound on</button>
-    <label class="chip">tilt <input id="tw-tilt" type="range" min="0" max="2" step="0.1" value="1"></label>
-  </aside>
+  <div id="vol-hint" title="turn up your volume — tap to dismiss" aria-label="sound is on">
+    <i></i><i></i><i></i><i></i>
+  </div>
 
   <div id="gate">
     <div class="play">▶ TAP TO BEGIN</div>
@@ -268,12 +302,8 @@
    ======================================================================= */
 const CONFIG = {
   BPM: 146,
-  palettes: {
-    dune:  { label:'Desert Dune', stops:['#3d2a17','#b87a34','#e8ce8f'] },  // umber → ochre → pale sand
-    ember: { label:'Dusk Ember',  stops:['#2c211a','#9c5a34','#d9a566'] },  // charcoal → terracotta → dusty gold
-  },
-  defaultPalette: 'dune',
-  tiltSensitivity: 1.0,          // default; user-tunable
+  palette: { stops:['#05100e','#0e5a52','#7fe9d6'] },  // teal-black → teal → bright cyan-teal (purple mixed in-shader)
+  tiltSensitivity: 1.0,
   event: {
     title:   "Yolan's 30th · Boom Festival 2027",
     startYMD:'20270718',         // 18 July 2027 (inclusive)
@@ -359,8 +389,7 @@ const state = {
   pointer:{ x:0, y:0 },
   smear: { x:0, y:0 },
   amp: 0,
-  palette: CONFIG.defaultPalette,
-  muted: false,
+  pointerActive: 0,
   audioLive: false,
 };
 
@@ -476,13 +505,16 @@ const plasma = (() => {
       float shade = smoothstep(0.12, 0.9, f + 0.3 * length(r));
       vec3 col = palette(f + 0.15 * uAmp);
       col *= shade * shade;                            // deep near-black valleys, glowing veins
+      // heterogeneous dark purple bleeding through the teal (separate low-freq field)
+      float pm = smoothstep(0.42, 0.82, fbm(uv * 0.6 + flow * 0.5 + r * 0.4));
+      col = mix(col, vec3(0.24, 0.10, 0.40) * (0.35 + f), pm * 0.6);
       col += uAmp * 0.12 * palette(0.65);              // beat bloom, in-palette
       col *= 0.5 + 0.4 * uProgress;                    // ramp intensity across the arc
       float vig = smoothstep(1.25, 0.22, length(uv));  // vignette
       col *= 0.30 + 0.56 * vig;
-      // burnt: crush + warm-shift the shadows, scorched-edge tint
+      // burnt: crush the shadows + cool charred-edge tint (teal/purple, not warm)
       col = pow(col, vec3(1.18));
-      col *= mix(vec3(1.06, 0.86, 0.66), vec3(1.0), smoothstep(0.0, 0.5, vig));  // charred rim
+      col *= mix(vec3(0.82, 0.94, 1.02), vec3(1.0), smoothstep(0.0, 0.5, vig));  // charred rim
       // film grain (animated) — heavier in the midtones, like burnt photographic stock
       float luma = dot(col, vec3(0.299, 0.587, 0.114));
       float grain = hash(gl_FragCoord.xy * 1.7 + fract(uTime * 0.37) * 311.0) - 0.5;
@@ -537,12 +569,47 @@ const plasma = (() => {
 const mandala = (() => {
   const canvas = $('#mandala');
   const ctx = canvas.getContext('2d');
-  let W = 0, H = 0;
-  function resize(w, h){ canvas.width = W = w; canvas.height = H = h; }
+  let W = 0, H = 0, dust = [];
+  function resize(w, h){ canvas.width = W = w; canvas.height = H = h; seedDust(); }
   const N = 9;                       // rotational symmetry
+
+  // interactive dust/ember field — drifts up, repelled by the pointer, blown by tilt, pulses with amp
+  function seedDust(){
+    const n = Math.round(clamp(W * H / 26000, 40, 90));
+    dust = [];
+    for (let i = 0; i < n; i++) dust.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.15, vy: -0.1 - Math.random() * 0.25,
+      r: 0.6 + Math.random() * 1.8, tone: Math.random(),
+    });
+  }
+  function drawParticles(){
+    if (!dust.length) return;
+    const col = CONFIG.palette.stops, amp = state.amp, act = state.pointerActive;
+    const px = (state.pointer.x * 0.5 + 0.5) * W, py = (0.5 - state.pointer.y * 0.5) * H;
+    const R = W * 0.18;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of dust){
+      p.vx += state.tilt.x * 0.02; p.vy += -state.tilt.y * 0.02;
+      if (act > 0.02){
+        const dx = p.x - px, dy = p.y - py, d2 = dx * dx + dy * dy;
+        if (d2 < R * R){ const d = Math.sqrt(d2) || 1, f = (1 - d / R) * 1.4 * act; p.vx += dx / d * f; p.vy += dy / d * f; }
+      }
+      p.vx *= 0.95; p.vy = p.vy * 0.95 - 0.015;
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < -6) p.x = W + 6; else if (p.x > W + 6) p.x = -6;
+      if (p.y < -6){ p.y = H + 6; p.x = Math.random() * W; } else if (p.y > H + 6) p.y = -6;
+      ctx.globalAlpha = 0.10 + 0.14 * (1 - p.tone * 0.5) + amp * 0.10;
+      ctx.fillStyle = p.tone < 0.5 ? col[2] : '#8a63c4';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + amp * 0.6), 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  }
 
   function draw(){
     ctx.clearRect(0, 0, W, H);
+    drawParticles();
     const cx = W / 2, cy = H / 2;
     const base = Math.min(W, H);
     // bloom: single point in ignition, grows into the full mandala
@@ -555,7 +622,7 @@ const mandala = (() => {
       return;
     }
     const amp = state.amp;
-    const col = CONFIG.palettes[state.palette].stops;
+    const col = CONFIG.palette.stops;
     const a2 = v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
 
     ctx.save();
@@ -660,7 +727,7 @@ const audio = (() => {
   function ensure(){
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = state.muted ? 0 : 0.9;
+    master = ctx.createGain(); master.gain.value = 0.9;   // always on
     analyser = ctx.createAnalyser(); analyser.fftSize = 256;
     freqData = new Uint8Array(analyser.frequencyBinCount);
     master.connect(analyser); analyser.connect(ctx.destination);
@@ -734,11 +801,7 @@ const audio = (() => {
     for (let i = 0; i < bins; i++) s += freqData[i];
     return clamp((s / bins) / 255 * 1.6, 0, 1);
   }
-  function setMuted(m){
-    state.muted = m;
-    if (master) master.gain.setTargetAtTime(m ? 0 : 0.9, ctx.currentTime, 0.02);
-  }
-  return { start, readAmp, setMuted, get live(){ return running && !state.muted; } };
+  return { start, readAmp, get live(){ return running; } };
 })();
 
 /* =======================================================================
@@ -761,6 +824,7 @@ function initInput(){
   stage.addEventListener('pointermove', e => {
     const p = pos(e);
     state.pointer.x = p.x; state.pointer.y = p.y;
+    state.pointerActive = 1;                      // decays in frame(); scales particle repulsion
     if (down){
       const dx = p.x - down.x, dy = p.y - down.y;
       down.moved += Math.abs(dx) + Math.abs(dy);
@@ -772,7 +836,7 @@ function initInput(){
     const tap = down.moved < 0.04 && (performance.now() - down.t) < 400;
     down = null;
     if (!tap) return;
-    if (e.target.closest('button, a, input, label, #tweaks, #cta-footer, #debug')) return;
+    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #debug')) return;
     if (state.started) advance();
   });
 }
@@ -804,36 +868,15 @@ function downloadIcs(){
 }
 
 /* =======================================================================
-   Tweaks panel
+   UI wiring — fixed palette, save-the-date, volume-bar hint
    ======================================================================= */
-function applyPalette(key){
-  state.palette = key;
-  localStorage.setItem('ym_pal', key);
-  if (plasma) plasma.setPalette(CONFIG.palettes[key].stops);
-  $('#tw-palette').textContent = '◑ ' + CONFIG.palettes[key].label;
-}
-function applyMuted(m){
-  audio.setMuted(m);
-  localStorage.setItem('ym_mute', m ? '1' : '0');
-  $('#tw-sound').textContent = m ? '♪ sound off' : '♪ sound on';
-}
-function initTweaks(){
-  // restore persisted prefs
-  const savedPal = localStorage.getItem('ym_pal');
-  applyPalette(CONFIG.palettes[savedPal] ? savedPal : CONFIG.defaultPalette);
-  state.muted = localStorage.getItem('ym_mute') === '1';
-  $('#tw-sound').textContent = state.muted ? '♪ sound off' : '♪ sound on';
-  const savedTilt = parseFloat(localStorage.getItem('ym_tilt'));
-  if (!isNaN(savedTilt)){ CONFIG.tiltSensitivity = savedTilt; $('#tw-tilt').value = savedTilt; }
-
-  $('#tw-palette').onclick = () => applyPalette(state.palette === 'dune' ? 'ember' : 'dune');
-  $('#tw-sound').onclick   = () => applyMuted(!state.muted);
-  $('#tw-tilt').oninput = e => {
-    CONFIG.tiltSensitivity = parseFloat(e.target.value);
-    localStorage.setItem('ym_tilt', e.target.value);
-  };
+function initUI(){
+  if (plasma) plasma.setPalette(CONFIG.palette.stops);
   $('#btn-gcal').href = gcalUrl();
-  $('#btn-ics').onclick  = downloadIcs;
+  $('#btn-ics').onclick = downloadIcs;
+  // sound is always on; the rising volume bar just nudges "turn up your device", tap dismisses it
+  const vol = $('#vol-hint');
+  vol.addEventListener('click', () => vol.classList.add('hide'), { once:true });
 }
 
 /* =======================================================================
@@ -852,7 +895,7 @@ function initGate(){
     } else {
       window.addEventListener('deviceorientation', onTilt);
     }
-    if (!reducedMotion) audio.start();      // reduced-motion: no auto audio
+    if (!reducedMotion){ audio.start(); $('#vol-hint').classList.add('show'); }  // reduced-motion: no auto audio
     state.started = true;
     state.startClock = performance.now();
     state.seekOffset = 0; state.ended = false;
@@ -907,6 +950,13 @@ function frame(now){
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
   state.tilt.y = lerp(state.tilt.y, state.tiltTarget.y, 0.08);
   state.smear.x *= 0.90; state.smear.y *= 0.90;
+  state.pointerActive *= 0.94;
+
+  // expose live inputs to CSS: tilt-reactive headings + music-pumped UI
+  const rs = document.documentElement.style;
+  rs.setProperty('--tx', state.tilt.x.toFixed(3));
+  rs.setProperty('--ty', state.tilt.y.toFixed(3));
+  rs.setProperty('--amp', state.amp.toFixed(3));
 
   if (plasma) plasma.draw();
   mandala.draw();
@@ -917,7 +967,7 @@ function frame(now){
 /* =======================================================================
    Boot
    ======================================================================= */
-initTweaks();
+initUI();
 initInput();
 initGate();
 initDebug();
