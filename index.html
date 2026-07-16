@@ -717,7 +717,7 @@ const overlay = (() => {
    Audio engine — procedural psytrance pulse
    ======================================================================= */
 const audio = (() => {
-  let ctx, master, analyser, freqData, running = false;
+  let ctx, master, analyser, freqData, running = false, baseline = 0.2;
   let noiseBuf = null;
   const SPB = 60 / CONFIG.BPM;      // seconds per beat
   const STEP = SPB / 4;             // 16th note
@@ -797,9 +797,11 @@ const audio = (() => {
   function readAmp(){
     if (!analyser) return 0;
     analyser.getByteFrequencyData(freqData);
-    let s = 0; const bins = 8;               // low-frequency energy → the kick/bass pulse
+    let s = 0; const bins = 6;               // low-frequency energy → the kick
     for (let i = 0; i < bins; i++) s += freqData[i];
-    return clamp((s / bins) / 255 * 1.6, 0, 1);
+    const e = (s / bins) / 255;              // 0..1 low-freq energy (saturates on sustained bass)
+    baseline += (e - baseline) * 0.03;       // slow adaptive floor (~0.5s), tracks the sustained level
+    return clamp((e - baseline) * 6.0, 0, 1); // kick spikes above the floor → a real pump, not a glow
   }
   return { start, readAmp, get live(){ return running; } };
 })();
@@ -942,9 +944,10 @@ function frame(now){
 
   // amp: live audio energy, else deterministic pulse
   // pump is always on: deterministic synth pulse is the floor, live music energy adds on top
-  const pulse = synthPulse(state.ambientTime);
-  const live  = audio.live ? audio.readAmp() : 0;
-  state.amp = lerp(state.amp, Math.max(pulse, live), 0.35);
+  // pump: the live kick transient when sound is running (synced to what you hear), else the
+  // deterministic synth envelope (before the gate tap / reduced-motion). Always a real pump.
+  const target = audio.live ? audio.readAmp() : synthPulse(state.ambientTime);
+  state.amp = lerp(state.amp, target, 0.4);
 
   // smooth tilt, decay smear
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
