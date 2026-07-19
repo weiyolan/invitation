@@ -6,7 +6,7 @@ on:
   push:
     branches:
       - main
-      - claude/plan-md-implementation-6otyo7   # go live from the working branch too (no merge needed)
+      - claude/shader-background-mobile-gestures-5hl3pj   # go live from the working branch too (no merge needed)
   workflow_dispatch:
 
 permissions:
