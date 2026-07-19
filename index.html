@@ -29,6 +29,7 @@
   html,body{ height:100%; }
   body{
     background:#000; color:var(--ink); overflow:hidden;
+    overscroll-behavior:none;   /* no pull-to-refresh / rubber-band stealing drags */
     font-family:var(--display);
     display:flex; align-items:center; justify-content:center;
     -webkit-tap-highlight-color:transparent;
@@ -38,6 +39,7 @@
      wide screens get a centered portrait column. */
   #stage{
     position:fixed; inset:0; overflow:hidden; background:#04100e;
+    touch-action:none;   /* the stage owns touch: drag-smear + tap, no browser scroll/zoom */
     container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
   }
   @media (min-aspect-ratio: 9/16){
@@ -48,10 +50,9 @@
     }
   }
 
-  #plasma,#mandala,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
   #fallback{ z-index:0; display:none; }
-  #mandala{ z-index:1; pointer-events:none; }
 
   /* WebGL-unavailable fallback: animated CSS gradient */
   .no-webgl #plasma{ display:none; }
@@ -231,7 +232,6 @@
 <main id="stage">
   <canvas id="plasma"></canvas>
   <div id="fallback"></div>
-  <canvas id="mandala"></canvas>
 
   <div id="overlay">
     <div class="beat" data-beat="0"></div>
@@ -344,30 +344,6 @@ const hexToRgb01 = h => {
   return [ (n>>16 & 255)/255, (n>>8 & 255)/255, (n & 255)/255 ];
 };
 
-// Easing + interpolate lifted from the uploaded animations-v2.jsx (framework-agnostic
-// bits; the rest of that file is a React/host-bound scene engine that can't run here).
-const Easing = {
-  easeOutCubic:   t => (--t) * t * t + 1,
-  easeInOutCubic: t => (t < 0.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2) + 1),
-  easeInOutSine:  t => -(Math.cos(Math.PI * t) - 1) / 2,
-  easeOutBack:    t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
-};
-// interpolate([0,.5,1], [0,1,0], ease?) -> fn(t): maps t across keyframes to output values.
-function interpolate(input, output, ease = (t=>t)){
-  return t => {
-    if (t <= input[0]) return output[0];
-    if (t >= input[input.length-1]) return output[output.length-1];
-    for (let i = 0; i < input.length-1; i++){
-      if (t >= input[i] && t <= input[i+1]){
-        const span = input[i+1] - input[i];
-        const local = span === 0 ? 0 : (t - input[i]) / span;
-        return output[i] + (output[i+1] - output[i]) * ease(local);
-      }
-    }
-    return output[output.length-1];
-  };
-}
-
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (params.has('clean')) document.body.classList.add('clean');
 
@@ -389,7 +365,6 @@ const state = {
   pointer:{ x:0, y:0 },
   smear: { x:0, y:0 },
   amp: 0,
-  pointerActive: 0,
   audioLive: false,
 };
 
@@ -436,7 +411,7 @@ const plasma = (() => {
   const canvas = $('#plasma');
   const gl = canvas.getContext('webgl', {
     alpha:false, antialias:false, depth:false, stencil:false,
-    premultipliedAlpha:false, preserveDrawingBuffer:true, powerPreference:'high-performance',
+    premultipliedAlpha:false, powerPreference:'high-performance',
   });
   window.__hasWebGL = !!gl;
   if (!gl){ document.body.classList.add('no-webgl'); return null; }
@@ -564,140 +539,6 @@ const plasma = (() => {
 })();
 
 /* =======================================================================
-   Mandala (2D canvas) layer — sacred geometry + full-moon accent
-   ======================================================================= */
-const mandala = (() => {
-  const canvas = $('#mandala');
-  const ctx = canvas.getContext('2d');
-  let W = 0, H = 0, dust = [];
-  function resize(w, h){ canvas.width = W = w; canvas.height = H = h; seedDust(); }
-  const N = 9;                       // rotational symmetry
-
-  // interactive dust/ember field — drifts up, repelled by the pointer, blown by tilt, pulses with amp
-  function seedDust(){
-    const n = Math.round(clamp(W * H / 26000, 40, 90));
-    dust = [];
-    for (let i = 0; i < n; i++) dust.push({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.15, vy: -0.1 - Math.random() * 0.25,
-      r: 0.6 + Math.random() * 1.8, tone: Math.random(),
-    });
-  }
-  function drawParticles(){
-    if (!dust.length) return;
-    const col = CONFIG.palette.stops, amp = state.amp, act = state.pointerActive;
-    const px = (state.pointer.x * 0.5 + 0.5) * W, py = (0.5 - state.pointer.y * 0.5) * H;
-    const R = W * 0.18;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const p of dust){
-      p.vx += state.tilt.x * 0.02; p.vy += -state.tilt.y * 0.02;
-      if (act > 0.02){
-        const dx = p.x - px, dy = p.y - py, d2 = dx * dx + dy * dy;
-        if (d2 < R * R){ const d = Math.sqrt(d2) || 1, f = (1 - d / R) * 1.4 * act; p.vx += dx / d * f; p.vy += dy / d * f; }
-      }
-      p.vx *= 0.95; p.vy = p.vy * 0.95 - 0.015;
-      p.x += p.vx; p.y += p.vy;
-      if (p.x < -6) p.x = W + 6; else if (p.x > W + 6) p.x = -6;
-      if (p.y < -6){ p.y = H + 6; p.x = Math.random() * W; } else if (p.y > H + 6) p.y = -6;
-      ctx.globalAlpha = 0.10 + 0.14 * (1 - p.tone * 0.5) + amp * 0.10;
-      ctx.fillStyle = p.tone < 0.5 ? col[2] : '#8a63c4';
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + amp * 0.6), 0, 6.283); ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  function draw(){
-    ctx.clearRect(0, 0, W, H);
-    drawParticles();
-    const cx = W / 2, cy = H / 2;
-    const base = Math.min(W, H);
-    // bloom: single point in ignition, grows into the full mandala
-    const bloom = state.started ? Easing.easeOutCubic(clamp(state.sceneTime / BEATS[IDX.boom].start, 0, 1)) : 0.0;
-    if (bloom <= 0.001){
-      // the seed spark
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, base * 0.08);
-      g.addColorStop(0, '#ffffff'); g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-      return;
-    }
-    const amp = state.amp;
-    const col = CONFIG.palette.stops;
-    const a2 = v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.translate(cx, cy);
-    ctx.rotate(state.ambientTime * 0.05);
-
-    // Infinite emanation: the motif repeated at exponentially growing scales, phase-staggered so
-    // rings are perpetually born faint at the centre and fade out past the rim (seamless loop).
-    const LAYERS = 5, zoom = state.ambientTime * 0.06;
-    for (let L = 0; L < LAYERS; L++){
-      const p = ((zoom + L / LAYERS) % 1 + 1) % 1;
-      const R = base * 0.12 * Math.pow(6.0, p);
-      drawMotif(R, Math.sin(p * Math.PI) * bloom);
-    }
-    ctx.restore();
-
-    // full-moon accent during the DATES beat
-    const moon = state.beat === IDX.dates
-      ? interpolate([0, 0.5, 1], [0, 1, 0], Easing.easeInOutSine)(
-          clamp((state.sceneTime - BEATS[IDX.dates].start) / BEATS[IDX.dates].dur, 0, 1))
-      : 0;
-    if (moon > 0.01){
-      const mx = cx, my = cy - base * 0.28, mr = base * 0.12;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const g = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2.4);
-      g.addColorStop(0, `rgba(245,236,214,${0.7 * moon})`);
-      g.addColorStop(0.5, `rgba(216,168,110,${0.38 * moon})`);
-      g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, mr * 2.4, 0, 7); ctx.fill();
-      ctx.restore();
-    }
-
-    // ponytail: 5 shadowed motif layers/frame; if it stutters on old phones, drop LAYERS or shadowBlur.
-    function drawMotif(R, alpha){
-      if (alpha <= 0.004) return;
-      ctx.lineWidth = 1 + amp * 1.0;
-      ctx.shadowBlur = 5 + amp * 10;
-      // flower-of-life ring (7 circles: centre + hex)
-      ctx.strokeStyle = col[1] + a2(alpha * 0.5); ctx.shadowColor = col[1];
-      const fr = R * 0.5;
-      drawCircle(0, 0, fr);
-      for (let k = 0; k < 6; k++){ const a = k * Math.PI / 3; drawCircle(Math.cos(a) * fr, Math.sin(a) * fr, fr); }
-      // N-fold petals
-      ctx.strokeStyle = col[0] + a2(alpha * 0.42); ctx.shadowColor = col[0];
-      ctx.save();
-      for (let k = 0; k < N; k++){
-        ctx.rotate((Math.PI * 2) / N);
-        ctx.beginPath();
-        ctx.moveTo(0, R * 0.2);
-        ctx.quadraticCurveTo(R * 0.42, R * 0.55, 0, R * 1.05);
-        ctx.quadraticCurveTo(-R * 0.42, R * 0.55, 0, R * 0.2);
-        ctx.stroke();
-      }
-      ctx.restore();
-      // concentric polygons
-      ctx.strokeStyle = col[2] + a2(alpha * 0.3); ctx.shadowColor = col[2];
-      for (let ring = 1; ring <= 3; ring++){ drawPolygon(0, 0, R * (0.35 + ring * 0.22), N * 2); }
-    }
-    function drawCircle(x, y, r){ ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); }
-    function drawPolygon(x, y, r, sides){
-      ctx.beginPath();
-      for (let i = 0; i <= sides; i++){
-        const a = (i / sides) * Math.PI * 2;
-        const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-      }
-      ctx.stroke();
-    }
-  }
-  return { resize, draw };
-})();
-
-/* =======================================================================
    Overlay / beat controller
    ======================================================================= */
 const overlay = (() => {
@@ -714,7 +555,7 @@ const overlay = (() => {
 })();
 
 /* =======================================================================
-   Audio engine — procedural psytrance pulse
+   Audio engine — procedural acid techno (4/4 kick, 303 line, offbeat hats)
    ======================================================================= */
 const audio = (() => {
   let ctx, master, analyser, freqData, running = false;
@@ -729,6 +570,7 @@ const audio = (() => {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = 0.9;   // always on
     analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;   // default .8 blurs the kick into a flat line
     freqData = new Uint8Array(analyser.frequencyBinCount);
     master.connect(analyser); analyser.connect(ctx.destination);
     // white-noise buffer for hats/shimmer
@@ -751,13 +593,37 @@ const audio = (() => {
     env(g, t, 0.002, 1.0, 0.28);
     o.connect(g).connect(master); o.start(t); o.stop(t + 0.34);
   }
-  function bass(t, hz){
+  // 303-style acid line — [semitones, accent, slide] per 16th; null = rest.
+  // Steps 0/4/8/12 belong to the kick. Slide = portamento into the next step's pitch.
+  const ACID = [
+    null, [0,0,0],  [0,1,0],  [12,0,1],
+    null, [3,0,0],  [15,1,0], [12,0,1],
+    null, [0,0,0],  [0,1,0],  [10,0,1],
+    null, [7,1,0],  [3,0,0],  [-2,0,1],
+  ];
+  function acid(t, s16, bar){
+    const n = ACID[s16];
+    if (!n) return;
+    const [semi, acc, slide] = n;
+    const root = roots[bar % roots.length];
+    const hz = root * Math.pow(2, semi / 12);
     const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    o.type = 'sawtooth'; o.frequency.value = hz;
-    f.type = 'lowpass'; f.frequency.setValueAtTime(500, t); f.Q.value = 8;
-    f.frequency.exponentialRampToValueAtTime(180, t + 0.1);
-    env(g, t, 0.004, 0.42, 0.12);
-    o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + 0.2);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(hz, t);
+    const dur = slide ? STEP * 1.9 : STEP * 0.85;
+    if (slide){
+      const nx = ACID[(s16 + 1) % 16];
+      o.frequency.setValueAtTime(hz, t + STEP * 0.4);
+      o.frequency.exponentialRampToValueAtTime(root * Math.pow(2, (nx ? nx[0] : 0) / 12), t + dur);
+    }
+    // the squelch: resonant cutoff spikes then snaps shut; a slow 8-bar sweep
+    // opens the whole line up and back down (the classic acid build)
+    const sweep = 0.5 - 0.5 * Math.cos((bar % 8) / 8 * 6.2831853);
+    f.type = 'lowpass'; f.Q.value = acc ? 19 : 14;
+    f.frequency.setValueAtTime((300 + 1500 * sweep) * (acc ? 1.9 : 1), t);
+    f.frequency.exponentialRampToValueAtTime(120, t + (slide ? 0.3 : 0.16));
+    env(g, t, 0.003, acc ? 0.5 : 0.33, dur);
+    o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
   }
   function hat(t){
     const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
@@ -779,10 +645,9 @@ const audio = (() => {
   }
   function schedule(){
     while (nextTime < ctx.currentTime + 0.12){
-      const bar = Math.floor(step / 16) % roots.length;
-      const s16 = step % 16, s4 = step % 4;
-      if (s4 === 0) kick(nextTime);
-      else          bass(nextTime, roots[bar] * (s16 === 7 ? 1.5 : 1)); // little lift mid-bar
+      const bar = Math.floor(step / 16), s16 = step % 16;
+      if (s16 % 4 === 0) kick(nextTime);
+      else acid(nextTime, s16, bar);
       if (s16 % 2 === 1) hat(nextTime);
       nextTime += STEP; step++;
     }
@@ -794,12 +659,19 @@ const audio = (() => {
     nextTime = ctx.currentTime + 0.05; step = 0;
     timer = setInterval(schedule, 25);
   }
+  let ampLo = 255, ampHi = 0;   // auto-ranging floor/ceiling — the pad drone keeps the
+                                // low bins far above zero, so fixed scaling pins at 1.0
   function readAmp(){
     if (!analyser) return 0;
     analyser.getByteFrequencyData(freqData);
     let s = 0; const bins = 8;               // low-frequency energy → the kick/bass pulse
     for (let i = 0; i < bins; i++) s += freqData[i];
-    return clamp((s / bins) / 255 * 1.6, 0, 1);
+    s /= bins;
+    ampLo = Math.min(ampLo * 0.999 + 0.255, s);  // floor relaxes up, snaps down
+    ampHi = Math.max(ampHi * 0.999, s);          // ceiling relaxes down, snaps up
+    if (ampHi - ampLo < 8) return 0;
+    const v = clamp((s - ampLo) / (ampHi - ampLo), 0, 1);
+    return v * v;   // emphasize the kick over the dense 16th-note floor
   }
   return { start, readAmp, get live(){ return running; } };
 })();
@@ -824,7 +696,6 @@ function initInput(){
   stage.addEventListener('pointermove', e => {
     const p = pos(e);
     state.pointer.x = p.x; state.pointer.y = p.y;
-    state.pointerActive = 1;                      // decays in frame(); scales particle repulsion
     if (down){
       const dx = p.x - down.x, dy = p.y - down.y;
       down.moved += Math.abs(dx) + Math.abs(dy);
@@ -885,6 +756,13 @@ function initUI(){
 function initGate(){
   const gate = $('#gate');
   async function begin(){
+    // Audio FIRST, synchronously: any await (the iOS tilt dialog) ends the user-gesture
+    // window and the AudioContext would stay suspended → silent on iPhone.
+    if (!reducedMotion){ audio.start(); $('#vol-hint').classList.add('show'); }  // reduced-motion: no auto audio
+    state.started = true;
+    state.startClock = performance.now();
+    state.seekOffset = 0; state.ended = false;
+    gate.classList.add('hide');
     // iOS 13+ requires an explicit permission request inside a user gesture
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function'){
@@ -895,11 +773,6 @@ function initGate(){
     } else {
       window.addEventListener('deviceorientation', onTilt);
     }
-    if (!reducedMotion){ audio.start(); $('#vol-hint').classList.add('show'); }  // reduced-motion: no auto audio
-    state.started = true;
-    state.startClock = performance.now();
-    state.seekOffset = 0; state.ended = false;
-    gate.classList.add('hide');
   }
   gate.addEventListener('click', begin, { once:true });
 }
@@ -933,24 +806,20 @@ function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
   if (plasma) plasma.resize(w, h);
-  mandala.resize(w, h);
 }
 
 function frame(now){
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
 
-  // amp: live audio energy, else deterministic pulse
-  // pump is always on: deterministic synth pulse is the floor, live music energy adds on top
-  const pulse = synthPulse(state.ambientTime);
-  const live  = audio.live ? audio.readAmp() : 0;
-  state.amp = lerp(state.amp, Math.max(pulse, live), 0.35);
+  // amp: follow the real music when it plays (the synth pulse free-runs on another
+  // clock and would pump off-beat); deterministic pulse only before/without audio
+  state.amp = lerp(state.amp, audio.live ? audio.readAmp() : synthPulse(state.ambientTime), 0.35);
 
   // smooth tilt, decay smear
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
   state.tilt.y = lerp(state.tilt.y, state.tiltTarget.y, 0.08);
   state.smear.x *= 0.90; state.smear.y *= 0.90;
-  state.pointerActive *= 0.94;
 
   // expose live inputs to CSS: tilt-reactive headings + music-pumped UI
   const rs = document.documentElement.style;
@@ -959,7 +828,6 @@ function frame(now){
   rs.setProperty('--amp', state.amp.toFixed(3));
 
   if (plasma) plasma.draw();
-  mandala.draw();
   overlay.update();
   requestAnimationFrame(frame);
 }
