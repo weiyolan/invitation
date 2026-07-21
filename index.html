@@ -16,12 +16,12 @@
 <!-- Google Fonts (graceful system fallback if the request fails) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400..900&family=Space+Grotesk:wght@400..700&display=swap" rel="stylesheet">
 
 <style>
   :root{
-    --display: 'Fraunces', 'Playfair Display', Georgia, 'Times New Roman', serif;
-    --mono: 'Space Mono', ui-monospace, Menlo, Consolas, monospace;
+    --display: 'Unbounded', system-ui, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'Space Grotesk', ui-monospace, Menlo, Consolas, monospace;  /* label font (not truly mono anymore) */
     --ink: #e7efee;
     --tx: 0; --ty: 0; --amp: 0;   /* live tilt (-1..1) + music pulse (0..1), set each frame */
   }
@@ -108,7 +108,7 @@
   .boom span:nth-child(1){ --d:7px } .boom span:nth-child(2){ --d:3px }
   .boom span:nth-child(3){ --d:3px } .boom span:nth-child(4){ --d:7px }
   .years{ font-family:var(--mono); font-weight:700; margin-top:.5rem;
-    font-size:clamp(.85rem,3.4cqw,1.5rem); letter-spacing:.5em; text-indent:.5em;
+    font-size:clamp(.85rem,3.4cqw,1.5rem); letter-spacing:.3em; text-indent:.3em;
     color:#e7efee; text-shadow:0 2px 10px #000000aa; }
 
   .dates{ font-family:var(--display); font-weight:900;
@@ -126,7 +126,7 @@
     color:#8ad6c6; text-shadow:0 2px 10px #000000aa; }
 
   .cta-title{ font-family:var(--mono); font-weight:700;
-    font-size:clamp(.95rem,4cqw,1.9rem); letter-spacing:.3em; text-indent:.3em;
+    font-size:clamp(.95rem,4cqw,1.9rem); letter-spacing:.2em; text-indent:.2em;
     text-shadow:0 2px 12px #000000aa; }
 
   .sign{ font-family:var(--display); font-weight:900;
@@ -160,6 +160,16 @@
   .story-roll .replay{ text-align:center; margin:1.8rem 0 30cqh; opacity:.5;
     font-family:var(--mono); letter-spacing:.3em; font-size:.8rem; }
 
+  /* RSVP guest list — rolls up at the tail of the credits ("end of the translating text") */
+  .story-roll .guests{ margin:1.8rem 0 .4rem; }
+  .story-roll .guests h4{ font-family:var(--mono); font-weight:700; letter-spacing:.22em;
+    text-transform:uppercase; font-size:.72rem; color:#8ad6c6; margin-bottom:.6rem; }
+  .story-roll .guests ul{ list-style:none; display:flex; flex-wrap:wrap; gap:.35em .8em; }
+  .story-roll .guests li{ font-family:var(--mono); font-size:.92rem; opacity:.92;
+    overflow-wrap:anywhere; }
+  .story-roll .guests li:not(.empty)::before{ content:'✦ '; color:#7fe9d6; }
+  .story-roll .guests li.empty{ opacity:.5; }
+
   /* save-the-date — minimal text controls, pinned; pumps with the music */
   #cta-footer{
     position:absolute; left:0; right:0; bottom:max(7vmin, env(safe-area-inset-bottom));
@@ -168,7 +178,7 @@
     transform:scale(calc(1 + var(--amp)*0.05)); transform-origin:bottom center;
   }
   #cta-footer.show{ opacity:calc(.72 + var(--amp)*.28); pointer-events:auto; }
-  .cta-label{ font-size:clamp(.6rem,2.6cqw,.8rem); letter-spacing:.42em; text-indent:.42em; color:#8ad6c6; }
+  .cta-label{ font-size:clamp(.6rem,2.6cqw,.8rem); letter-spacing:.3em; text-indent:.3em; color:#8ad6c6; }
   .cta-links{ display:flex; align-items:center; gap:.7em; font-size:clamp(.72rem,3.1cqw,.95rem); }
   .cta-links a, .cta-links button{
     font-family:var(--mono); color:#e7efee; background:none; border:0; cursor:pointer;
@@ -177,6 +187,32 @@
   }
   .cta-links a:hover, .cta-links button:hover{ color:#7fe9d6; border-color:#7fe9d6; }
   .cta-sep{ opacity:.35; }
+
+  /* RSVP form — pinned during the closing story so it's typable while the credits roll behind it */
+  #rsvp{
+    position:absolute; left:0; right:0; bottom:max(7vmin, env(safe-area-inset-bottom));
+    z-index:5; display:none; flex-direction:column; align-items:center; gap:.5rem;
+    padding:0 6cqw; font-family:var(--mono); opacity:0; transition:opacity .8s ease;
+  }
+  #rsvp.show{ display:flex; opacity:1; }
+  .rsvp-label{ font-size:clamp(.55rem,2.5cqw,.75rem); letter-spacing:.26em; text-indent:.26em; color:#8ad6c6; }
+  #rsvp-form{ display:flex; align-items:center; gap:.5em; width:100%; max-width:min(90cqw, 360px); }
+  #rsvp-name{
+    flex:1; min-width:0; font-family:var(--mono); font-size:clamp(.8rem,3.4cqw,1rem);
+    color:#e7efee; background:#0008; border:1px solid #7fe9d655; border-radius:.4em;
+    padding:.5em .7em; outline:none; transition:border-color .2s;
+  }
+  #rsvp-name:focus{ border-color:#7fe9d6; }
+  #rsvp-name::placeholder{ color:#e7efee66; }
+  #rsvp-form button{
+    font-family:var(--mono); font-weight:700; white-space:nowrap; cursor:pointer;
+    color:#04100e; background:#7fe9d6; border:0; border-radius:.4em;
+    padding:.55em .9em; font-size:clamp(.75rem,3.1cqw,.95rem); transition:filter .2s;
+  }
+  #rsvp-form button:hover{ filter:brightness(1.1); }
+  #rsvp-form button:disabled{ opacity:.5; cursor:default; }
+  #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:#8ad6c6; }
+  .clean #rsvp{ display:none !important; }
 
   /* tap-to-begin gate */
   #gate{
@@ -211,6 +247,19 @@
   #vol-hint i:nth-child(4){ animation-delay:.6s }
   @keyframes volrise{ 0%{height:15%} 50%{height:100%} 100%{height:15%} }
   .clean #vol-hint{ display:none !important; }
+
+  /* HYPE slider — cranks the hardstyle of the acid-techno in real time; pinned top-left, glows on the beat */
+  #hype{
+    position:absolute; top:max(4vmin, env(safe-area-inset-top)); left:5vmin; z-index:6;
+    display:none; align-items:center; gap:.5rem; width:min(46cqw, 220px);
+    font-family:var(--mono); opacity:0; transition:opacity .6s ease;
+  }
+  #hype.show{ display:flex; opacity:.9; }
+  #hype label{ font-size:clamp(.55rem,2.4cqw,.72rem); font-weight:700; letter-spacing:.22em;
+    color:#7fe9d6; text-shadow:0 1px 6px #000; }
+  #hype input[type=range]{ flex:1; min-width:0; accent-color:#7fe9d6; cursor:pointer;
+    filter:drop-shadow(0 0 calc(var(--amp)*6px) #7fe9d6aa); }
+  .clean #hype{ display:none !important; }
 
   /* debug scrubber (?debug) */
   #debug{ position:absolute; left:0; right:0; bottom:0; z-index:9; display:none;
@@ -263,6 +312,10 @@
           <p>The next edition runs 18 to 25 July 2027, under a full moon, and marks 30 years of cosmic psychedelic dancing — landing in the very same year I turn 30, which makes it non-negotiable.</p>
           <p>Come mentally prepared for a full week of camping under the blazing Alentejo sun (July temperatures can top 40°C), sunrise sets and communal ritual, so pack light, hydrate hard, and be ready to properly disconnect.</p>
           <p>One catch: Boom has been selling out since 2014, historically within hours, and ticket sales open after summer 2026 — so if you're in, lock it in your calendar now, because this one only comes around every two years and this edition is the big one.</p>
+          <div class="guests">
+            <h4>who's coming</h4>
+            <ul id="guest-list"><li class="empty">be the first ✦</li></ul>
+          </div>
           <div class="replay">▶ tap to replay</div>
         </div>
       </div>
@@ -276,6 +329,20 @@
       <span class="cta-sep">·</span>
       <button id="btn-ics">.ics ↓</button>
     </div>
+  </div>
+
+  <div id="rsvp">
+    <div class="rsvp-label">COMING? DROP YOUR NAME</div>
+    <form id="rsvp-form" autocomplete="off">
+      <input id="rsvp-name" type="text" maxlength="40" placeholder="your name" aria-label="your name" required>
+      <button type="submit">I'm in ↗</button>
+    </form>
+    <div id="rsvp-msg" aria-live="polite"></div>
+  </div>
+
+  <div id="hype">
+    <label for="hype-slider">HYPE</label>
+    <input id="hype-slider" type="range" min="0" max="100" value="0" aria-label="hype — harder techno">
   </div>
 
   <div id="vol-hint" title="turn up your volume — tap to dismiss" aria-label="sound is on">
@@ -310,6 +377,12 @@ const CONFIG = {
     endYMD:  '20270726',         // all-day DTEND/gcal end is EXCLUSIVE → 26 July
     location:'Idanha-a-Nova, Portugal',
     details: 'The year Boom turns 30 — the year I turn 30. Save the dates!',
+  },
+  // Live guest list (optional). Create a free Supabase project, run the SQL in the README,
+  // then paste your Project URL + anon public key here. Until then names just show locally.
+  supabase: {
+    url:     'https://YOUR_REF.supabase.co',
+    anonKey: 'YOUR_ANON_KEY',
   },
   // Narrative beats and their dwell time (seconds). Tune freely.
   beats: [
@@ -544,11 +617,14 @@ const plasma = (() => {
 const overlay = (() => {
   const blocks = [...document.querySelectorAll('.beat')];
   const footer = $('#cta-footer');
+  const rsvp = $('#rsvp');
   function update(){
     const i = beatIndexAt(state.sceneTime);
     state.beat = i;
     blocks.forEach(b => b.classList.toggle('active', +b.dataset.beat === i));
-    footer.classList.toggle('show', i >= IDX.cta);
+    // save-the-date on beats ≥ cta, but hand the bottom slot to the RSVP form on the closing story
+    footer.classList.toggle('show', i >= IDX.cta && i !== IDX.story);
+    rsvp.classList.toggle('show', i === IDX.story);
     if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
   }
   return { update };
@@ -559,9 +635,10 @@ const overlay = (() => {
    ======================================================================= */
 const audio = (() => {
   let ctx, master, analyser, freqData, running = false;
-  let noiseBuf = null;
-  const SPB = 60 / CONFIG.BPM;      // seconds per beat
-  const STEP = SPB / 4;             // 16th note
+  let noiseBuf = null, drive = null, shaper = null;
+  let H = 0;                                  // hardness / hype 0..1 (slider-driven)
+  const bpm    = () => CONFIG.BPM * (1 + 0.06 * H);  // ponytail: modest +6% max tempo lift (~146→155); wider range would fight the 8-bar acid sweep
+  const step16 = () => 60 / bpm() / 4;        // live 16th-note duration (tempo tracks hype)
   let nextTime = 0, step = 0, timer = null;
   const roots = [55.0, 55.0, 65.41, 55.0]; // A1,A1,C2,A1 per bar — gentle movement
 
@@ -573,6 +650,14 @@ const audio = (() => {
     analyser.smoothingTimeConstant = 0.3;   // default .8 blurs the kick into a flat line
     freqData = new Uint8Array(analyser.frequencyBinCount);
     master.connect(analyser); analyser.connect(ctx.destination);
+    // hardstyle drive bus: kick + acid saturate through a fixed tanh curve; more input gain = more grit.
+    // tanh self-limits (no digital clip); pad + hats bypass it to keep the highs/drone clean.
+    shaper = ctx.createWaveShaper(); shaper.oversample = '2x';
+    const cv = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) cv[i] = Math.tanh(3 * (i / 1023 * 2 - 1));
+    shaper.curve = cv;
+    drive = ctx.createGain(); drive.gain.value = 1;
+    drive.connect(shaper).connect(master);
     // white-noise buffer for hats/shimmer
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -588,10 +673,18 @@ const audio = (() => {
   function kick(t){
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = 'sine';
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(45, t + 0.09);
-    env(g, t, 0.002, 1.0, 0.28);
-    o.connect(g).connect(master); o.start(t); o.stop(t + 0.34);
+    o.frequency.setValueAtTime(180, t);                   // punchier attack than before
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+    env(g, t, 0.001, 1.0 + 0.5 * H, 0.28 + 0.10 * H);     // louder + longer sub tail as hype climbs
+    o.connect(g).connect(drive); o.start(t); o.stop(t + 0.42);
+    // beater click — a short high ping that snaps the attack (harder with hype)
+    const c = ctx.createOscillator(), cg = ctx.createGain();
+    c.type = 'triangle';
+    c.frequency.setValueAtTime(1400, t); c.frequency.exponentialRampToValueAtTime(200, t + 0.02);
+    cg.gain.setValueAtTime(0.0001, t);
+    cg.gain.exponentialRampToValueAtTime(0.22 + 0.4 * H, t + 0.001);
+    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+    c.connect(cg).connect(drive); c.start(t); c.stop(t + 0.03);
   }
   // 303-style acid line — [semitones, accent, slide] per 16th; null = rest.
   // Steps 0/4/8/12 belong to the kick. Slide = portamento into the next step's pitch.
@@ -604,6 +697,7 @@ const audio = (() => {
   function acid(t, s16, bar){
     const n = ACID[s16];
     if (!n) return;
+    const STEP = step16();
     const [semi, acc, slide] = n;
     const root = roots[bar % roots.length];
     const hz = root * Math.pow(2, semi / 12);
@@ -617,13 +711,14 @@ const audio = (() => {
       o.frequency.exponentialRampToValueAtTime(root * Math.pow(2, (nx ? nx[0] : 0) / 12), t + dur);
     }
     // the squelch: resonant cutoff spikes then snaps shut; a slow 8-bar sweep
-    // opens the whole line up and back down (the classic acid build)
+    // opens the whole line up and back down (the classic acid build). Hype cranks
+    // resonance, sweep depth and accent gain, then saturates through the drive bus.
     const sweep = 0.5 - 0.5 * Math.cos((bar % 8) / 8 * 6.2831853);
-    f.type = 'lowpass'; f.Q.value = acc ? 19 : 14;
-    f.frequency.setValueAtTime((300 + 1500 * sweep) * (acc ? 1.9 : 1), t);
+    f.type = 'lowpass'; f.Q.value = (acc ? 19 : 14) + 8 * H;               // ≤27 at full hype
+    f.frequency.setValueAtTime((300 + (1500 + 1200 * H) * sweep) * (acc ? 1.9 : 1), t);
     f.frequency.exponentialRampToValueAtTime(120, t + (slide ? 0.3 : 0.16));
-    env(g, t, 0.003, acc ? 0.5 : 0.33, dur);
-    o.connect(f).connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
+    env(g, t, 0.003, (acc ? 0.5 : 0.33) * (1 + 0.4 * H), dur);
+    o.connect(f).connect(g).connect(drive); o.start(t); o.stop(t + dur + 0.05);
   }
   function hat(t){
     const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
@@ -649,7 +744,7 @@ const audio = (() => {
       if (s16 % 4 === 0) kick(nextTime);
       else acid(nextTime, s16, bar);
       if (s16 % 2 === 1) hat(nextTime);
-      nextTime += STEP; step++;
+      nextTime += step16(); step++;
     }
   }
   function start(){
@@ -673,7 +768,11 @@ const audio = (() => {
     const v = clamp((s - ampLo) / (ampHi - ampLo), 0, 1);
     return v * v;   // emphasize the kick over the dense 16th-note floor
   }
-  return { start, readAmp, get live(){ return running; } };
+  function setHardness(h){
+    H = clamp(h, 0, 1);
+    if (drive) drive.gain.setTargetAtTime(1 + 4 * H, ctx.currentTime, 0.05);  // 1×→5× into the tanh = clean→gritty
+  }
+  return { start, readAmp, setHardness, get live(){ return running; } };
 })();
 
 /* =======================================================================
@@ -707,7 +806,7 @@ function initInput(){
     const tap = down.moved < 0.04 && (performance.now() - down.t) < 400;
     down = null;
     if (!tap) return;
-    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #debug')) return;
+    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #hype, #rsvp, #debug')) return;
     if (state.started) advance();
   });
 }
@@ -739,6 +838,59 @@ function downloadIcs(){
 }
 
 /* =======================================================================
+   RSVP guest list — optional Supabase backing; degrades to local-only.
+   All network is try/caught and silent so verify.mjs stays error-free.
+   ======================================================================= */
+const SB = CONFIG.supabase;
+const sbLive = () => SB && SB.url && !SB.url.includes('YOUR_REF');
+const sbHeaders = () => ({ apikey: SB.anonKey, Authorization: 'Bearer ' + SB.anonKey });
+
+function renderGuest(name){
+  const ul = $('#guest-list'); if (!ul) return;
+  const empty = ul.querySelector('.empty'); if (empty) empty.remove();
+  const li = document.createElement('li');
+  li.textContent = name;                 // textContent, never innerHTML — names are public untrusted input
+  ul.appendChild(li);
+}
+async function loadGuests(){
+  if (!sbLive() || !$('#guest-list')) return;
+  try {
+    const r = await fetch(`${SB.url}/rest/v1/rsvps?select=name&order=created_at.asc`, { headers: sbHeaders() });
+    if (!r.ok) return;
+    const rows = await r.json();
+    if (!rows.length) return;            // keep the "be the first" placeholder
+    $('#guest-list').textContent = '';
+    rows.forEach(row => renderGuest(row.name));
+  } catch (_) { /* offline / not configured → keep whatever's shown */ }
+}
+async function addGuest(name){
+  if (!sbLive()) return true;            // local-only demo: treat as success so the name still shows
+  try {
+    const r = await fetch(`${SB.url}/rest/v1/rsvps`, {
+      method:'POST',
+      headers:{ ...sbHeaders(), 'Content-Type':'application/json', Prefer:'return=minimal' },
+      body: JSON.stringify({ name }),
+    });
+    return r.ok;
+  } catch (_) { return false; }
+}
+function initRsvp(){
+  const form = $('#rsvp-form'); if (!form) return;
+  const input = $('#rsvp-name'), msg = $('#rsvp-msg'), btn = form.querySelector('button');
+  loadGuests();
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = input.value.trim().slice(0, 40);
+    if (!name) return;
+    btn.disabled = true; msg.textContent = '';
+    const ok = await addGuest(name);
+    btn.disabled = false;
+    if (ok){ renderGuest(name); input.value = ''; msg.textContent = "you're on the list ✦"; }
+    else   { msg.textContent = "couldn't save — try again"; }
+  });
+}
+
+/* =======================================================================
    UI wiring — fixed palette, save-the-date, volume-bar hint
    ======================================================================= */
 function initUI(){
@@ -748,6 +900,14 @@ function initUI(){
   // sound is always on; the rising volume bar just nudges "turn up your device", tap dismisses it
   const vol = $('#vol-hint');
   vol.addEventListener('click', () => vol.classList.add('hide'), { once:true });
+
+  // HYPE slider → live audio hardness. stopPropagation so dragging the thumb doesn't smear the shader.
+  const hype = $('#hype-slider');
+  hype.addEventListener('input', () => audio.setHardness(hype.value / 100));
+  ['pointerdown','pointermove','pointerup'].forEach(ev =>
+    hype.addEventListener(ev, e => e.stopPropagation()));
+
+  initRsvp();
 }
 
 /* =======================================================================
@@ -758,7 +918,7 @@ function initGate(){
   async function begin(){
     // Audio FIRST, synchronously: any await (the iOS tilt dialog) ends the user-gesture
     // window and the AudioContext would stay suspended → silent on iPhone.
-    if (!reducedMotion){ audio.start(); $('#vol-hint').classList.add('show'); }  // reduced-motion: no auto audio
+    if (!reducedMotion){ audio.start(); $('#vol-hint').classList.add('show'); $('#hype').classList.add('show'); }  // reduced-motion: no auto audio/hype
     state.started = true;
     state.startClock = performance.now();
     state.seekOffset = 0; state.ended = false;
