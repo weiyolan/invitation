@@ -52,6 +52,7 @@
 
   #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
+  body.hyper #plasma,body.hyper #fallback{ filter:hue-rotate(var(--hue,0deg)); }  /* theme color steps per beat in hypermode */
   #fallback{ z-index:0; display:none; }
 
   /* WebGL-unavailable fallback: animated CSS gradient */
@@ -139,36 +140,25 @@
     font-size:clamp(.68rem,2.8cqw,1.05rem); }
   .replay{ margin-top:2.4rem; opacity:.5; letter-spacing:.3em; font-size:.75rem; }
 
-  /* closing story — full-screen auto slide-up (credits roll) */
-  .beat[data-beat="7"]{ top:0; bottom:0; padding:0; }
-  .story{
-    position:absolute; inset:0; overflow:hidden;
-    font-family:var(--display); color:#e7efee;
-    background:radial-gradient(125% 85% at 50% 50%, rgba(2,7,10,.30), rgba(2,7,10,.85));
-    -webkit-mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent);
-    mask-image:linear-gradient(180deg,transparent,#000 14%,#000 86%,transparent);
-  }
-  .story-roll{
-    position:absolute; left:50%; top:0; width:min(26em, 84cqw);
-    transform:translate(-50%, 92cqh);
-    text-align:left; font-size:clamp(.95rem,4.2cqw,1.3rem); line-height:1.72;
-    text-shadow:0 1px 4px #000000cc;
-  }
-  .beat[data-beat="7"].active .story-roll{ animation:credits 30s linear forwards; }
-  @keyframes credits{ from{ transform:translate(-50%,92cqh) } to{ transform:translate(-50%,-42cqh) } }
-  .story-roll p{ margin:0 0 1.1em; }
-  .story-roll .replay{ text-align:center; margin:1.8rem 0 30cqh; opacity:.5;
-    font-family:var(--mono); letter-spacing:.3em; font-size:.8rem; }
+  /* closing story — a few big static screens (split from the old scrolling roll) */
+  .tale{ font-family:var(--display); font-weight:700;
+    font-size:clamp(1.15rem,5.4cqw,2.7rem); line-height:1.32;
+    text-shadow:0 2px 12px #000000aa; }
+  .tale b{ font-weight:900; color:#7fe9d6; }   /* spark-teal keyword pop */
 
-  /* RSVP guest list — rolls up at the tail of the credits ("end of the translating text") */
-  .story-roll .guests{ margin:1.8rem 0 .4rem; }
-  .story-roll .guests h4{ font-family:var(--mono); font-weight:700; letter-spacing:.22em;
-    text-transform:uppercase; font-size:.72rem; color:#8ad6c6; margin-bottom:.6rem; }
-  .story-roll .guests ul{ list-style:none; display:flex; flex-wrap:wrap; gap:.35em .8em; }
-  .story-roll .guests li{ font-family:var(--mono); font-size:.92rem; opacity:.92;
+  /* guests screen — names, fully visible; the pinned #rsvp form sits below */
+  .guests-screen{ display:flex; flex-direction:column; align-items:center;
+    max-height:62cqh; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,#000 88%,transparent);
+    mask-image:linear-gradient(180deg,#000 88%,transparent); }
+  .guests-screen h4{ font-family:var(--mono); font-weight:700; letter-spacing:.22em;
+    text-transform:uppercase; font-size:clamp(.7rem,3cqw,.9rem); color:#8ad6c6; margin-bottom:1rem; }
+  .guests-screen ul{ list-style:none; display:flex; flex-wrap:wrap; justify-content:center;
+    gap:.4em .9em; }
+  .guests-screen li{ font-family:var(--mono); font-size:clamp(.9rem,3.6cqw,1.2rem); opacity:.92;
     overflow-wrap:anywhere; }
-  .story-roll .guests li:not(.empty)::before{ content:'✦ '; color:#7fe9d6; }
-  .story-roll .guests li.empty{ opacity:.5; }
+  .guests-screen li:not(.empty)::before{ content:'✦ '; color:#7fe9d6; }
+  .guests-screen li.empty{ opacity:.5; }
 
   /* save-the-date — minimal text controls, pinned; pumps with the music */
   #cta-footer{
@@ -199,10 +189,13 @@
   #rsvp-form{ display:flex; align-items:center; gap:.5em; width:100%; max-width:min(90cqw, 360px); }
   #rsvp-name{
     flex:1; min-width:0; font-family:var(--mono); font-size:clamp(.8rem,3.4cqw,1rem);
-    color:#e7efee; background:#0008; border:1px solid #7fe9d655; border-radius:.4em;
+    color:#e7efee; background:#0008; border:1.5px solid #7fe9d6; border-radius:.4em;
     padding:.5em .7em; outline:none; transition:border-color .2s;
+    /* spark border that pumps with the kick (--amp updated every frame) */
+    box-shadow:0 0 calc(3px + var(--amp)*16px) rgba(127,233,214, calc(.35 + var(--amp)*.65)),
+               inset 0 0 calc(var(--amp)*7px) rgba(127,233,214,.25);
   }
-  #rsvp-name:focus{ border-color:#7fe9d6; }
+  #rsvp-name:focus{ border-color:#aef7e8; }
   #rsvp-name::placeholder{ color:#e7efee66; }
   #rsvp-form button{
     font-family:var(--mono); font-weight:700; white-space:nowrap; cursor:pointer;
@@ -233,7 +226,7 @@
 
   /* volume-bar hint — rising equalizer bars, "turn up your device"; tap to dismiss. Pumps with music. */
   #vol-hint{
-    position:absolute; top:max(4vmin, env(safe-area-inset-top)); right:5vmin; z-index:6;
+    position:absolute; top:max(2.6rem, calc(env(safe-area-inset-top) + 1.8rem)); right:5vmin; z-index:6;
     display:none; align-items:flex-end; gap:3px; height:24px; padding:6px; cursor:pointer;
     opacity:0; transition:opacity .6s ease;
     transform:scaleY(calc(1 + var(--amp)*0.4)); transform-origin:bottom;
@@ -250,16 +243,41 @@
 
   /* HYPE slider — cranks the hardstyle of the acid-techno in real time; pinned top-left, glows on the beat */
   #hype{
-    position:absolute; top:max(4vmin, env(safe-area-inset-top)); left:5vmin; z-index:6;
+    position:absolute; top:max(2.6rem, calc(env(safe-area-inset-top) + 1.8rem)); left:5vmin; z-index:6;
     display:none; align-items:center; gap:.5rem; width:min(46cqw, 220px);
     font-family:var(--mono); opacity:0; transition:opacity .6s ease;
   }
   #hype.show{ display:flex; opacity:.9; }
   #hype label{ font-size:clamp(.55rem,2.4cqw,.72rem); font-weight:700; letter-spacing:.22em;
-    color:#7fe9d6; text-shadow:0 1px 6px #000; }
+    color:#7fe9d6; text-shadow:0 1px 6px #000; white-space:nowrap; }
   #hype input[type=range]{ flex:1; min-width:0; accent-color:#7fe9d6; cursor:pointer;
     filter:drop-shadow(0 0 calc(var(--amp)*6px) #7fe9d6aa); }
   .clean #hype{ display:none !important; }
+
+  /* HYPE slider BREAKS when someone RSVPs → hypermode */
+  #hype.broken{ animation:shatter .6s ease both; }
+  #hype.broken label{ color:#ff5a5a; text-shadow:0 0 8px #ff5a5a88; }
+  #hype.broken input[type=range]{ accent-color:#ff5a5a; opacity:.55; transform:skewX(-9deg);
+    filter:none; pointer-events:none; }
+  @keyframes shatter{
+    0%{ transform:translateX(0) } 12%{ transform:translate(-7px,2px) skewX(7deg) }
+    26%{ transform:translate(7px,-2px) skewX(-7deg) } 40%{ transform:translate(-5px,1px) skewX(5deg) }
+    58%{ transform:translate(4px,-1px) skewX(-3deg) } 78%{ transform:translate(-2px,0) skewX(2deg) }
+    100%{ transform:translateX(0) }
+  }
+
+  /* progress dots — one per screen, Stories-style, pinned top-center */
+  #dots{
+    position:absolute; top:max(0.8rem, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    z-index:7; display:none; align-items:center; gap:6px; max-width:86cqw; flex-wrap:wrap; justify-content:center;
+  }
+  #dots.show{ display:flex; }
+  #dots i{ width:6px; height:6px; border-radius:50%; background:#e7efee33;
+    transition:background .3s, transform .3s, box-shadow .1s; }
+  #dots i.done{ background:#7fe9d688; }
+  #dots i.now{ background:#7fe9d6; transform:scale(1.6);
+    box-shadow:0 0 calc(3px + var(--amp)*9px) #7fe9d6; }
+  .clean #dots{ display:none !important; }
 
   /* debug scrubber (?debug) */
   #debug{ position:absolute; left:0; right:0; bottom:0; z-index:9; display:none;
@@ -271,9 +289,9 @@
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
     .no-webgl #fallback{ animation:none; }
-    .beat[data-beat="7"].active .story-roll{ animation:none; transform:translate(-50%,4cqh); }
-    .story{ overflow-y:auto; }
     #vol-hint i{ animation:none; height:60%; }
+    #hype.broken{ animation:none; }
+    body.hyper #plasma,body.hyper #fallback{ filter:none; }   /* no per-beat color flashing */
   }
 </style>
 </head>
@@ -306,18 +324,18 @@
       <div class="place mono">Idanha-a-Nova · Portugal</div>
     </div>
     <div class="beat" data-beat="7">
-      <div class="story">
-        <div class="story-roll">
-          <p>Boom Festival is Portugal's legendary biennial gathering — born in 1997 and held every two years since on the banks of the Marechal Carmona Dam in Idanha-a-Nova, it's far more than a music event, blending psychedelic and psytrance sound with immersive art, sustainability innovation and a community-driven ethos, all run with zero commercial branding and famously free of corporate sponsors.</p>
-          <p>The next edition runs 18 to 25 July 2027, under a full moon, and marks 30 years of cosmic psychedelic dancing — landing in the very same year I turn 30, which makes it non-negotiable.</p>
-          <p>Come mentally prepared for a full week of camping under the blazing Alentejo sun (July temperatures can top 40°C), sunrise sets and communal ritual, so pack light, hydrate hard, and be ready to properly disconnect.</p>
-          <p>One catch: Boom has been selling out since 2014, historically within hours, and ticket sales open after summer 2026 — so if you're in, lock it in your calendar now, because this one only comes around every two years and this edition is the big one.</p>
-          <div class="guests">
-            <h4>who's coming</h4>
-            <ul id="guest-list"><li class="empty">be the first ✦</li></ul>
-          </div>
-          <div class="replay">▶ tap to replay</div>
-        </div>
+      <div class="tale">Portugal's wildest <b>psytrance</b> gathering. No sponsors, no branding — just art, sound and the open desert.</div>
+    </div>
+    <div class="beat" data-beat="8">
+      <div class="tale">A full week under the <b>Alentejo sun</b>. Camping, sunrise sets, 40°C days — come to <b>properly disconnect</b>.</div>
+    </div>
+    <div class="beat" data-beat="9">
+      <div class="tale">It <b>sells out in hours</b>. Sales open after summer 2026. If you're in — <b>lock it in now</b>.</div>
+    </div>
+    <div class="beat" data-beat="10">
+      <div class="guests-screen">
+        <h4>who's coming</h4>
+        <ul id="guest-list"><li class="empty">be the first ✦</li></ul>
       </div>
     </div>
   </div>
@@ -340,6 +358,8 @@
     <div id="rsvp-msg" aria-live="polite"></div>
   </div>
 
+  <div id="dots" aria-hidden="true"></div>
+
   <div id="hype">
     <label for="hype-slider">HYPE</label>
     <input id="hype-slider" type="range" min="0" max="100" value="0" aria-label="hype — harder techno">
@@ -351,7 +371,7 @@
 
   <div id="gate">
     <div class="play">▶ TAP TO BEGIN</div>
-    <div class="hint">sound on · move your phone · tap to advance</div>
+    <div class="hint">sound on · move your phone · ◂ tap sides ▸</div>
   </div>
 
   <div id="debug">
@@ -385,6 +405,7 @@ const CONFIG = {
     anonKey: 'sb_publishable_1FL3dTXvXBvMZ1lAft32MA_H-_d_TsI',
   },
   // Narrative beats and their dwell time (seconds). Tune freely.
+  // Stories-style: auto-advances; tap left = back, tap right = next. Arc holds on the last (guests).
   beats: [
     { id:'ignition', dur:4 },
     { id:'boom',     dur:4 },
@@ -393,7 +414,10 @@ const CONFIG = {
     { id:'urgency',  dur:5 },
     { id:'cta',      dur:6 },
     { id:'signoff',  dur:5 },
-    { id:'story',    dur:14 },   // the full read; the arc holds here at the end
+    { id:'tale1',    dur:5.5 },
+    { id:'tale2',    dur:5.5 },
+    { id:'tale3',    dur:5.5 },
+    { id:'guests',   dur:14 },   // who's coming + RSVP; the arc holds here at the end
   ],
 };
 
@@ -438,7 +462,10 @@ const state = {
   pointer:{ x:0, y:0 },
   smear: { x:0, y:0 },
   amp: 0,
+  ampOut: 0,                     // amp after hypermode boost — feeds shader + CSS
   audioLive: false,
+  hyper: false,                  // latched when someone RSVPs
+  hue: 0, beatHi: false,         // per-beat hue stepping in hypermode
 };
 
 /* =======================================================================
@@ -465,6 +492,12 @@ function advance(){
   const target = BEATS[i + 1].start + 0.001;
   if (state.paused || reducedMotion) state.held.scene = target;
   else state.seekOffset += target - t;
+}
+function back(){
+  state.ended = false;
+  const target = BEATS[Math.max(0, state.beat - 1)].start + 0.001;
+  if (state.paused || reducedMotion) state.held.scene = target;
+  else state.seekOffset += target - state.sceneTime;
 }
 function replay(){
   state.ended = false;
@@ -604,7 +637,7 @@ const plasma = (() => {
     gl.uniform2f(u.tilt, state.tilt.x, state.tilt.y);
     gl.uniform2f(u.pointer, state.pointer.x, state.pointer.y);
     gl.uniform2f(u.smear, state.smear.x, state.smear.y);
-    gl.uniform1f(u.amp, state.amp);
+    gl.uniform1f(u.amp, state.ampOut);
     gl.uniform1f(u.progress, state.started ? state.sceneTime / DURATION : 0.15);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -618,13 +651,18 @@ const overlay = (() => {
   const blocks = [...document.querySelectorAll('.beat')];
   const footer = $('#cta-footer');
   const rsvp = $('#rsvp');
+  const dotsWrap = $('#dots');
+  BEATS.forEach(() => dotsWrap.appendChild(document.createElement('i')));   // one dot per screen
+  const dots = [...dotsWrap.children];
   function update(){
     const i = beatIndexAt(state.sceneTime);
     state.beat = i;
     blocks.forEach(b => b.classList.toggle('active', +b.dataset.beat === i));
-    // save-the-date on beats ≥ cta, but hand the bottom slot to the RSVP form on the closing story
-    footer.classList.toggle('show', i >= IDX.cta && i !== IDX.story);
-    rsvp.classList.toggle('show', i === IDX.story);
+    dots.forEach((d, k) => { d.classList.toggle('now', k === i); d.classList.toggle('done', k < i); });
+    dotsWrap.classList.toggle('show', state.started);
+    // save-the-date on beats ≥ cta, but hand the bottom slot to the RSVP form on the guests screen
+    footer.classList.toggle('show', i >= IDX.cta && i !== IDX.guests);
+    rsvp.classList.toggle('show', i === IDX.guests);
     if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
   }
   return { update };
@@ -637,7 +675,8 @@ const audio = (() => {
   let ctx, master, analyser, freqData, running = false;
   let noiseBuf = null, drive = null, shaper = null;
   let H = 0;                                  // hardness / hype 0..1 (slider-driven)
-  const bpm    = () => CONFIG.BPM * (1 + 0.06 * H);  // ponytail: modest +6% max tempo lift (~146→155); wider range would fight the 8-bar acid sweep
+  let hyperOn = false;                        // latched by RSVP → hypermode
+  const bpm    = () => CONFIG.BPM * (1 + 0.06 * H) * (hyperOn ? 1.08 : 1);  // ponytail: modest tempo lift; wider range fights the 8-bar acid sweep
   const step16 = () => 60 / bpm() / 4;        // live 16th-note duration (tempo tracks hype)
   let nextTime = 0, step = 0, timer = null;
   const roots = [55.0, 55.0, 65.41, 55.0]; // A1,A1,C2,A1 per bar — gentle movement
@@ -685,6 +724,19 @@ const audio = (() => {
     cg.gain.exponentialRampToValueAtTime(0.22 + 0.4 * H, t + 0.001);
     cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
     c.connect(cg).connect(drive); c.start(t); c.stop(t + 0.03);
+    if (hyperOn){
+      // deeper: a sub-bass layer under the kick
+      const s = ctx.createOscillator(), sg = ctx.createGain();
+      s.type = 'sine';
+      s.frequency.setValueAtTime(48, t); s.frequency.exponentialRampToValueAtTime(30, t + 0.12);
+      env(sg, t, 0.002, 0.9, 0.5);
+      s.connect(sg).connect(drive); s.start(t); s.stop(t + 0.6);
+      // pulsing: sidechain the whole mix — duck master on the kick, swell back over the beat
+      const beat = 60 / bpm();
+      master.gain.cancelScheduledValues(t);
+      master.gain.setValueAtTime(0.45, t);
+      master.gain.linearRampToValueAtTime(0.9, t + beat * 0.9);
+    }
   }
   // 303-style acid line — [semitones, accent, slide] per 16th; null = rest.
   // Steps 0/4/8/12 belong to the kick. Slide = portamento into the next step's pitch.
@@ -769,10 +821,17 @@ const audio = (() => {
     return v * v;   // emphasize the kick over the dense 16th-note floor
   }
   function setHardness(h){
+    if (hyperOn) return;                       // slider is "broken" once hypermode latches
     H = clamp(h, 0, 1);
     if (drive) drive.gain.setTargetAtTime(1 + 4 * H, ctx.currentTime, 0.05);  // 1×→5× into the tanh = clean→gritty
   }
-  return { start, readAmp, setHardness, get live(){ return running; } };
+  function hyper(){
+    if (hyperOn) return;
+    H = 1;                                      // max grit + resonance
+    hyperOn = true;
+    if (drive) drive.gain.setTargetAtTime(7, ctx.currentTime, 0.1);  // crank past the slider's 5× ceiling
+  }
+  return { start, readAmp, setHardness, hyper, get live(){ return running; } };
 })();
 
 /* =======================================================================
@@ -804,10 +863,12 @@ function initInput(){
   stage.addEventListener('pointerup', e => {
     if (!down) return;
     const tap = down.moved < 0.04 && (performance.now() - down.t) < 400;
+    const x = pos(e).x;                 // [-1..1]; left half = back, right half = next
     down = null;
     if (!tap) return;
-    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #hype, #rsvp, #debug')) return;
-    if (state.started) advance();
+    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
+    if (!state.started) return;
+    if (x < 0) back(); else advance();
   });
 }
 
@@ -874,6 +935,17 @@ async function addGuest(name){
     return r.ok;
   } catch (_) { return false; }
 }
+// Someone RSVP'd → the HYPE slider breaks and the whole thing goes into hypermode (latched).
+function enterHypermode(){
+  if (state.hyper) return;
+  state.hyper = true;
+  document.body.classList.add('hyper');
+  const hype = $('#hype'), slider = $('#hype-slider');
+  hype.classList.add('broken');
+  hype.querySelector('label').textContent = '⚡MAX';
+  slider.value = 100; slider.disabled = true;
+  if (audio.live) audio.hyper();
+}
 function initRsvp(){
   const form = $('#rsvp-form'); if (!form) return;
   const input = $('#rsvp-name'), msg = $('#rsvp-msg'), btn = form.querySelector('button');
@@ -885,7 +957,7 @@ function initRsvp(){
     btn.disabled = true; msg.textContent = '';
     const ok = await addGuest(name);
     btn.disabled = false;
-    if (ok){ renderGuest(name); input.value = ''; msg.textContent = "you're on the list ✦"; }
+    if (ok){ renderGuest(name); input.value = ''; msg.textContent = "you're on the list ✦"; enterHypermode(); }
     else   { msg.textContent = "couldn't save — try again"; }
   });
 }
@@ -975,6 +1047,13 @@ function frame(now){
   // amp: follow the real music when it plays (the synth pulse free-runs on another
   // clock and would pump off-beat); deterministic pulse only before/without audio
   state.amp = lerp(state.amp, audio.live ? audio.readAmp() : synthPulse(state.ambientTime), 0.35);
+  // hypermode pumps everything harder; ampOut feeds the shader + all CSS pumping
+  state.ampOut = state.hyper ? clamp(state.amp * 1.7, 0, 1.4) : state.amp;
+  // per-beat theme color in hypermode: step the hue on each kick (amp rising edge)
+  if (state.hyper && !reducedMotion){
+    if (!state.beatHi && state.ampOut > 0.55){ state.beatHi = true; state.hue = (state.hue + 48) % 360; }
+    else if (state.ampOut < 0.35) state.beatHi = false;
+  }
 
   // smooth tilt, decay smear
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
@@ -985,7 +1064,8 @@ function frame(now){
   const rs = document.documentElement.style;
   rs.setProperty('--tx', state.tilt.x.toFixed(3));
   rs.setProperty('--ty', state.tilt.y.toFixed(3));
-  rs.setProperty('--amp', state.amp.toFixed(3));
+  rs.setProperty('--amp', state.ampOut.toFixed(3));
+  rs.setProperty('--hue', state.hue + 'deg');
 
   if (plasma) plasma.draw();
   overlay.update();
