@@ -49,6 +49,7 @@ at a free [Supabase](https://supabase.com) project:
    alter table rsvps enable row level security;
    create policy "read"   on rsvps for select using (true);
    create policy "insert" on rsvps for insert with check (true);
+   grant select, insert on public.rsvps to anon, authenticated;
    ```
 3. **Settings → API** → copy the **Project URL** + **anon public** key into
    `CONFIG.supabase` in `index.html`.
