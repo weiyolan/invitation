@@ -13,6 +13,10 @@ a domain-warped plasma shader. It reacts to:
 - **Drag / swipe** → smears the color field.
 - **Tap** → skip ahead a beat (tap again at the end to replay).
 - **The music** → its low end drives the visual pulse.
+- **HYPE slider** (top-left) → cranks the hardstyle in real time: distorts the kick,
+  opens the acid resonance, and nudges the tempo up. Too hard? Slide it back down.
+- **RSVP** → on the closing credits, drop your name to say you're coming; names roll
+  up at the end of the story (shared list needs Supabase — see below).
 
 ## Deploy (get the WhatsApp link)
 
@@ -26,7 +30,34 @@ Tilt and audio need HTTPS — `file://` won't fire them; the Pages link will.
 ## Tuning
 
 Edit the `CONFIG` block at the top of the `<script>` in `index.html`:
-BPM, palette, per-beat durations, and the calendar-event details.
+BPM, palette, per-beat durations, the calendar-event details, and the `supabase`
+guest-list keys.
+
+## Guest list (RSVP)
+
+The name form works out of the box, but names only persist/share once you point it
+at a free [Supabase](https://supabase.com) project:
+
+1. supabase.com → **New project** (free tier).
+2. SQL editor → run:
+   ```sql
+   create table rsvps (
+     id bigint generated always as identity primary key,
+     name text not null check (char_length(name) between 1 and 40),
+     created_at timestamptz default now()
+   );
+   alter table rsvps enable row level security;
+   create policy "read"   on rsvps for select using (true);
+   create policy "insert" on rsvps for insert with check (true);
+   grant select, insert on public.rsvps to anon, authenticated;
+   ```
+3. **Settings → API** → copy the **Project URL** + **anon public** key into
+   `CONFIG.supabase` in `index.html`.
+
+The anon key is public by design (row-level security gates it), so it's safe to
+commit. Anyone can add a name (open insert) — fine for a party; add a captcha only
+if it gets spammed. Until you add keys, submitted names just show locally on that
+device for the session.
 
 ## Checks
 
