@@ -52,7 +52,9 @@
 
   #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
-  body.hyper #plasma,body.hyper #fallback{ filter:hue-rotate(var(--hue,0deg)); }  /* theme color steps per beat in hypermode */
+  /* hypermode: background AND text/foreground hue-shift together, one step per beat */
+  body.hyper #plasma,body.hyper #fallback,
+  body.hyper #overlay,body.hyper #rsvp{ filter:hue-rotate(var(--hue,0deg)); }
   #fallback{ z-index:0; display:none; }
 
   /* WebGL-unavailable fallback: animated CSS gradient */
@@ -291,7 +293,8 @@
     .no-webgl #fallback{ animation:none; }
     #vol-hint i{ animation:none; height:60%; }
     #hype.broken{ animation:none; }
-    body.hyper #plasma,body.hyper #fallback{ filter:none; }   /* no per-beat color flashing */
+    body.hyper #plasma,body.hyper #fallback,
+    body.hyper #overlay,body.hyper #rsvp{ filter:none; }   /* no per-beat color flashing */
   }
 </style>
 </head>
@@ -660,9 +663,9 @@ const overlay = (() => {
     blocks.forEach(b => b.classList.toggle('active', +b.dataset.beat === i));
     dots.forEach((d, k) => { d.classList.toggle('now', k === i); d.classList.toggle('done', k < i); });
     dotsWrap.classList.toggle('show', state.started);
-    // save-the-date on beats ≥ cta, but hand the bottom slot to the RSVP form on the guests screen
-    footer.classList.toggle('show', i >= IDX.cta && i !== IDX.guests);
-    rsvp.classList.toggle('show', i === IDX.guests);
+    // save-the-date on cta/signoff, then hand the bottom slot to the RSVP form from the first tale on
+    footer.classList.toggle('show', i >= IDX.cta && i < IDX.tale1);
+    rsvp.classList.toggle('show', i >= IDX.tale1);
     if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
   }
   return { update };
