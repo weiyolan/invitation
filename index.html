@@ -672,168 +672,127 @@ const overlay = (() => {
 })();
 
 /* =======================================================================
-   Audio engine — procedural acid techno (4/4 kick, 303 line, offbeat hats)
+   Audio engine — play the MP3 from src/ and let the slider ramp up speed,
+   noise, and a climax-style filter response.
    ======================================================================= */
 const audio = (() => {
-  let ctx, master, analyser, freqData, running = false;
-  let noiseBuf = null, drive = null, shaper = null;
-  let H = 0;                                  // hardness / hype 0..1 (slider-driven)
-  let hyperOn = false;                        // latched by RSVP → hypermode
-  const bpm    = () => CONFIG.BPM * (1 + 0.06 * H) * (hyperOn ? 1.08 : 1);  // ponytail: modest tempo lift; wider range fights the 8-bar acid sweep
-  const step16 = () => 60 / bpm() / 4;        // live 16th-note duration (tempo tracks hype)
-  let nextTime = 0, step = 0, timer = null;
-  const roots = [55.0, 55.0, 65.41, 55.0]; // A1,A1,C2,A1 per bar — gentle movement
+  let ctx = null, master = null, analyser = null, freqData = null;
+  let source = null, track = null;
+  let filterNode = null, climaxNode = null, noiseGain = null, noiseSource = null;
+  let running = false;
+  let H = 0;
+  let hyperOn = false;
 
   function ensure(){
     if (ctx) return;
+
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = 0.9;   // always on
-    analyser = ctx.createAnalyser(); analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.3;   // default .8 blurs the kick into a flat line
+    master = ctx.createGain();
+    master.gain.value = 0.85;
+
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;
     freqData = new Uint8Array(analyser.frequencyBinCount);
-    master.connect(analyser); analyser.connect(ctx.destination);
-    // hardstyle drive bus: kick + acid saturate through a fixed tanh curve; more input gain = more grit.
-    // tanh self-limits (no digital clip); pad + hats bypass it to keep the highs/drone clean.
-    shaper = ctx.createWaveShaper(); shaper.oversample = '2x';
-    const cv = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) cv[i] = Math.tanh(3 * (i / 1023 * 2 - 1));
-    shaper.curve = cv;
-    drive = ctx.createGain(); drive.gain.value = 1;
-    drive.connect(shaper).connect(master);
-    // white-noise buffer for hats/shimmer
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    pad();
+
+    track = new Audio();
+    track.src = 'src/AudioCutter_astrix-deep-jungle-walk.mp3';
+    track.preload = 'auto';
+    track.loop = true;
+    track.crossOrigin = 'anonymous';
+
+    source = ctx.createMediaElementSource(track);
+    filterNode = ctx.createBiquadFilter();
+    filterNode.type = 'lowpass';
+    filterNode.frequency.value = 22000;
+    filterNode.Q.value = 0.7;
+
+    climaxNode = ctx.createBiquadFilter();
+    climaxNode.type = 'bandpass';
+    climaxNode.frequency.value = 1200;
+    climaxNode.Q.value = 1.2;
+
+    noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0;
+
+    const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+    const noiseData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+
+    noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+    noiseSource.loop = true;
+    noiseSource.connect(climaxNode);
+    climaxNode.connect(noiseGain);
+    noiseGain.connect(analyser);
+
+    source.connect(filterNode);
+    filterNode.connect(analyser);
+    analyser.connect(master);
+    master.connect(ctx.destination);
+
+    noiseSource.start(0);
   }
-  function env(node, t, a, peak, dcy){
-    const g = node.gain;
-    g.setValueAtTime(0.0001, t);
-    g.exponentialRampToValueAtTime(peak, t + a);
-    g.exponentialRampToValueAtTime(0.0001, t + a + dcy);
-  }
-  function kick(t){
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(180, t);                   // punchier attack than before
-    o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
-    env(g, t, 0.001, 1.0 + 0.5 * H, 0.28 + 0.10 * H);     // louder + longer sub tail as hype climbs
-    o.connect(g).connect(drive); o.start(t); o.stop(t + 0.42);
-    // beater click — a short high ping that snaps the attack (harder with hype)
-    const c = ctx.createOscillator(), cg = ctx.createGain();
-    c.type = 'triangle';
-    c.frequency.setValueAtTime(1400, t); c.frequency.exponentialRampToValueAtTime(200, t + 0.02);
-    cg.gain.setValueAtTime(0.0001, t);
-    cg.gain.exponentialRampToValueAtTime(0.22 + 0.4 * H, t + 0.001);
-    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
-    c.connect(cg).connect(drive); c.start(t); c.stop(t + 0.03);
-    if (hyperOn){
-      // deeper: a sub-bass layer under the kick
-      const s = ctx.createOscillator(), sg = ctx.createGain();
-      s.type = 'sine';
-      s.frequency.setValueAtTime(48, t); s.frequency.exponentialRampToValueAtTime(30, t + 0.12);
-      env(sg, t, 0.002, 0.9, 0.5);
-      s.connect(sg).connect(drive); s.start(t); s.stop(t + 0.6);
-      // pulsing: sidechain the whole mix — duck master on the kick, swell back over the beat
-      const beat = 60 / bpm();
-      master.gain.cancelScheduledValues(t);
-      master.gain.setValueAtTime(0.45, t);
-      master.gain.linearRampToValueAtTime(0.9, t + beat * 0.9);
-    }
-  }
-  // 303-style acid line — [semitones, accent, slide] per 16th; null = rest.
-  // Steps 0/4/8/12 belong to the kick. Slide = portamento into the next step's pitch.
-  const ACID = [
-    null, [0,0,0],  [0,1,0],  [12,0,1],
-    null, [3,0,0],  [15,1,0], [12,0,1],
-    null, [0,0,0],  [0,1,0],  [10,0,1],
-    null, [7,1,0],  [3,0,0],  [-2,0,1],
-  ];
-  function acid(t, s16, bar){
-    const n = ACID[s16];
-    if (!n) return;
-    const STEP = step16();
-    const [semi, acc, slide] = n;
-    const root = roots[bar % roots.length];
-    const hz = root * Math.pow(2, semi / 12);
-    const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(hz, t);
-    const dur = slide ? STEP * 1.9 : STEP * 0.85;
-    if (slide){
-      const nx = ACID[(s16 + 1) % 16];
-      o.frequency.setValueAtTime(hz, t + STEP * 0.4);
-      o.frequency.exponentialRampToValueAtTime(root * Math.pow(2, (nx ? nx[0] : 0) / 12), t + dur);
-    }
-    // the squelch: resonant cutoff spikes then snaps shut; a slow 8-bar sweep
-    // opens the whole line up and back down (the classic acid build). Hype cranks
-    // resonance, sweep depth and accent gain, then saturates through the drive bus.
-    const sweep = 0.5 - 0.5 * Math.cos((bar % 8) / 8 * 6.2831853);
-    f.type = 'lowpass'; f.Q.value = (acc ? 19 : 14) + 8 * H;               // ≤27 at full hype
-    f.frequency.setValueAtTime((300 + (1500 + 1200 * H) * sweep) * (acc ? 1.9 : 1), t);
-    f.frequency.exponentialRampToValueAtTime(120, t + (slide ? 0.3 : 0.16));
-    env(g, t, 0.003, (acc ? 0.5 : 0.33) * (1 + 0.4 * H), dur);
-    o.connect(f).connect(g).connect(drive); o.start(t); o.stop(t + dur + 0.05);
-  }
-  function hat(t){
-    const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = 7000;
-    env(g, t, 0.001, 0.14, 0.04);
-    s.connect(f).connect(g).connect(master); s.start(t); s.stop(t + 0.06);
-  }
-  function pad(){
-    [110, 110.4, 164.8].forEach((hz, i) => {
-      const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-      o.type = i === 2 ? 'sine' : 'sawtooth'; o.frequency.value = hz; o.detune.value = i * 6 - 6;
-      f.type = 'lowpass'; f.frequency.value = 320;
-      g.gain.value = 0.05;
-      const lfo = ctx.createOscillator(), lg = ctx.createGain();
-      lfo.frequency.value = 0.05 + i * 0.02; lg.gain.value = 140;
-      lfo.connect(lg).connect(f.frequency); lfo.start();
-      o.connect(f).connect(g).connect(master); o.start();
-    });
-  }
-  function schedule(){
-    while (nextTime < ctx.currentTime + 0.12){
-      const bar = Math.floor(step / 16), s16 = step % 16;
-      if (s16 % 4 === 0) kick(nextTime);
-      else acid(nextTime, s16, bar);
-      if (s16 % 2 === 1) hat(nextTime);
-      nextTime += step16(); step++;
-    }
-  }
+
   function start(){
     ensure();
     if (ctx.state === 'suspended') ctx.resume();
-    if (running) return; running = true; state.audioLive = true;
-    nextTime = ctx.currentTime + 0.05; step = 0;
-    timer = setInterval(schedule, 25);
+    if (running) return;
+
+    running = true;
+    state.audioLive = true;
+    track.currentTime = 0;
+    track.playbackRate = 1;
+    track.play().catch(() => {});
   }
-  let ampLo = 255, ampHi = 0;   // auto-ranging floor/ceiling — the pad drone keeps the
-                                // low bins far above zero, so fixed scaling pins at 1.0
+
   function readAmp(){
-    if (!analyser) return 0;
+    if (!analyser || !freqData) return 0;
     analyser.getByteFrequencyData(freqData);
-    let s = 0; const bins = 8;               // low-frequency energy → the kick/bass pulse
+
+    let s = 0;
+    const bins = 8;
     for (let i = 0; i < bins; i++) s += freqData[i];
     s /= bins;
-    ampLo = Math.min(ampLo * 0.999 + 0.255, s);  // floor relaxes up, snaps down
-    ampHi = Math.max(ampHi * 0.999, s);          // ceiling relaxes down, snaps up
-    if (ampHi - ampLo < 8) return 0;
-    const v = clamp((s - ampLo) / (ampHi - ampLo), 0, 1);
-    return v * v;   // emphasize the kick over the dense 16th-note floor
+
+    return clamp(s / 255, 0, 1);
   }
+
   function setHardness(h){
-    if (hyperOn) return;                       // slider is "broken" once hypermode latches
+    if (hyperOn) return;
     H = clamp(h, 0, 1);
-    if (drive) drive.gain.setTargetAtTime(1 + 4 * H, ctx.currentTime, 0.05);  // 1×→5× into the tanh = clean→gritty
+
+    if (track) track.playbackRate = 1 + H * 0.6;
+    if (master) master.gain.setTargetAtTime(0.85 + 0.2 * H, ctx.currentTime, 0.05);
+
+    if (filterNode){
+      filterNode.frequency.setTargetAtTime(2200 + H * 18000, ctx.currentTime, 0.05);
+      filterNode.Q.setTargetAtTime(0.7 + H * 4.5, ctx.currentTime, 0.05);
+    }
+
+    if (climaxNode && noiseGain){
+      climaxNode.frequency.setTargetAtTime(700 + H * 2600, ctx.currentTime, 0.05);
+      climaxNode.Q.setTargetAtTime(1.2 + H * 5.5, ctx.currentTime, 0.05);
+      noiseGain.gain.setTargetAtTime(H * 0.08, ctx.currentTime, 0.05);
+    }
   }
+
   function hyper(){
     if (hyperOn) return;
-    H = 1;                                      // max grit + resonance
+    H = 1;
     hyperOn = true;
-    if (drive) drive.gain.setTargetAtTime(7, ctx.currentTime, 0.1);  // crank past the slider's 5× ceiling
-  }
+    if (track) track.playbackRate = 1.6;
+    if (master) master.gain.setTargetAtTime(1.0, ctx.currentTime, 0.1);
+    if (filterNode){
+      filterNode.frequency.setTargetAtTime(20000, ctx.currentTime, 0.1);
+      filterNode.Q.setTargetAtTime(5.2, ctx.currentTime, 0.1);
+    }
+    if (climaxNode && noiseGain){
+      climaxNode.frequency.setTargetAtTime(3200, ctx.currentTime, 0.1);
+      climaxNode.Q.setTargetAtTime(6.5, ctx.currentTime, 0.1);
+      noiseGain.gain.setTargetAtTime(0.12, ctx.currentTime, 0.1);
+    }
+
   return { start, readAmp, setHardness, hyper, get live(){ return running; } };
 })();
 
