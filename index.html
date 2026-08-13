@@ -493,7 +493,8 @@ function beatIndexAt(t){
 }
 function advance(){
   const t = state.sceneTime, i = state.beat;
-  if (state.ended || i >= BEATS.length - 1){ replay(); return; }
+  // Hold on the last slide instead of auto-restarting the story from the top.
+  if (i >= BEATS.length - 1) return;
   const target = BEATS[i + 1].start + 0.001;
   if (state.paused || reducedMotion) state.held.scene = target;
   else state.seekOffset += target - t;
@@ -809,9 +810,9 @@ const plasma = (() => {
     gl.uniform1i(uGlitch.tex, 0);
     gl.uniform1f(uGlitch.time, state.ambientTime % 60.0);
     gl.uniform1f(uGlitch.amp, state.ampOut);
-    gl.uniform1f(uGlitch.beatTrigger, state.beatTrigger);
-    // Glitch intensity: 0.3–1.0 range, peaks on beats (amp > 0.55)
-    const glitchIntensity = state.ampOut > 0.55 ? 0.8 + state.ampOut * 0.3 : 0.2 + state.ampOut * 0.3;
+    gl.uniform1f(uGlitch.beatTrigger, 0.0);
+    // Temporarily disable the beat-synced glitch pass so tap navigation stays reliable.
+    const glitchIntensity = 0.0;
     gl.uniform1f(uGlitch.glitchIntensity, glitchIntensity);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
