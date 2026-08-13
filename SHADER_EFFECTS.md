@@ -47,50 +47,85 @@ col.rgb += dither;               // Dither intensity ~0.08
 
 ---
 
-## Beat-Synced Glitch Effect
+## Beat-Synced Glitch Effect (Wave Sweep)
 
-**Purpose**: Create dynamic, psychedelic "analog corruption" that triggers on music kicks.
+**Purpose**: Create a sharp, directional "glitch pulse" that sweeps through on music kicks, rather than constant block flickering.
 
 ### How It Works
 
-#### 1. Beat Detection
-- Uses existing audio analyzer: `state.ampOut` (0–1 range)
-- **Beat threshold**: `ampOut > 0.55` (low-frequency kick detection)
-- `--amp` CSS variable also drives other UI elements (already synced)
-
-#### 2. Glitch Intensity Calculation
+#### 1. Beat Detection (Rising Edge)
+Tracks beat onset, not amplitude:
 ```javascript
-// Intensity ranges from 0.2 (no beat) to 1.1 (strong beat)
-const glitchIntensity = state.ampOut > 0.55 
-  ? 0.8 + state.ampOut * 0.3  // On beat: 0.8 – 1.1
-  : 0.2 + state.ampOut * 0.3  // Off beat: 0.2 – 0.5
+// Detect transition from inactive to active beat
+const beatIsActive = state.ampOut > 0.55;
+if (beatIsActive && !state.beatWasActive){
+  state.beatTrigger = 0;  // Reset on beat onset
+}
+state.beatWasActive = beatIsActive;
+state.beatTrigger += 1/60;  // Increment timer each frame
 ```
 
-#### 3. RGB Channel Displacement
-Classic "video corruption" look:
-- **Red channel**: Shifted +0.8% horizontally
-- **Green channel**: No shift (baseline)
-- **Blue channel**: Shifted -0.5% horizontally
-- Creates chromatic aberration effect
+**Result**: A clean beat pulse every time the kick hits, not a sustained high-amplitude state.
 
-#### 4. Block-Based Displacement
-- **Grid**: 16×12 pixel blocks
-- **Per-block noise**: Random offset per block position
-- **Displacement**: `sin(uTime * 12.0 + blockPos) * glitchIntensity * 0.15`
-- **Intensity**: Responsive to `uAmp` (beat-driven)
+#### 2. Wave Sweep Animation
+The shader receives `uBeatTrigger` (time since beat) and creates a directional wave:
 
-### Parameters (Shader Code)
 ```glsl
-vec2 blockSize = vec2(16.0, 12.0);
-float displace = (blockRand - 0.5) * glitch * 0.15;
-uv.y += sin(uTime * 12.0 + block.x * 6.28) * displace;
+// Exponential decay envelope — rapid fadeout
+float waveDecay = exp(-uBeatTrigger * 12.0);  // ~0.3s total duration
+
+// Wave front position sweeps downward (top to bottom)
+float wavePosition = uBeatTrigger * 3.0;     // Travels from 0 → 3 over decay time
+float waveCenter = vUv.y - wavePosition;     // Distance from wave front
+float waveFront = smoothstep(0.15, -0.05, abs(waveCenter));  // Sharp wave edge
 ```
+
+**Result**: 
+- **At beat onset**: Bright glitch band at top of screen
+- **0.1s later**: Band moves to center
+- **0.3s later**: Band exits bottom, effect fades to baseline
+
+#### 3. Glitch Wave Effects
+
+**Horizontal Displacement** (scanline-like):
+```glsl
+float horizontalShift = sin(vUv.y * 8.0 - wavePosition * 6.0) 
+                       * waveIntensity * glitch * 0.12;
+uv.x += horizontalShift;
+```
+Creates rippling, corrupted scanlines following the wave.
+
+**RGB Chromatic Aberration**:
+```glsl
+float rgbShift = glitch * waveIntensity * 0.015;
+float r = texture2D(uTex, uv + vec2(rgbShift, 0.0)).r;   // Red: +offset
+float g = texture2D(uTex, uv).g;                          // Green: center
+float b = texture2D(uTex, uv - vec2(rgbShift*0.7, 0.0)).b; // Blue: -offset
+```
+Separates RGB channels in the glitch wave for VHS/CRT effect.
 
 ### Visual Effect
-- **At rest**: Subtle, low-frequency RGB shimmer
-- **On kick (ampOut > 0.55)**: Intense block displacement + strong color shifts
-- **Timing**: Synchronized to music's low-end (bass/kick frequencies)
-- Creates "VHS corruption" or "CRT scan line" aesthetic
+- **Before beat**: Baseline glitch shimmer (very subtle, ~15% intensity)
+- **Beat onset**: Sharp glitch wave appears at top with scanlines
+- **Wave travels**: Sweeps downward over ~0.3 seconds
+- **After wave**: Returns to baseline
+- **Sync**: Each new kick triggers a new wave (no overlap/stacking)
+
+### Parameters (Tunable)
+
+| Parameter | Location | Effect |
+|-----------|----------|--------|
+| `0.55` | JS frame loop | Beat detection threshold (kick frequency) |
+| `exp(-uBeatTrigger * 12.0)` | Glitch shader | Decay speed (12 = faster fadeout) |
+| `uBeatTrigger * 3.0` | Glitch shader | Wave travel speed (3 = fast sweep) |
+| `sin(...* 8.0 ...)` | Glitch shader | Scanline frequency (8 = more lines) |
+| `0.15` to `-0.05` | Glitch shader | Wave front sharpness |
+
+---
+
+## Previous Implementation (Block Movement)
+
+The original glitch used random per-block displacement and was active whenever `ampOut > 0.55`. This created a "flickering" effect but didn't provide the sharp, directional impact of a wave sweep. The new wave-based approach is more visually striking and better suited to psychedelic/rave aesthetics.
 
 ---
 
@@ -124,25 +159,43 @@ float bits = 5.0 + uAmp * 2.0;  // Change range (currently 5–7 bits)
 col.rgb += dither * 0.15;        // Multiply dither by a factor
 ```
 
-### Tune Glitch Sensitivity
-**File**: `index.html`, draw() function
+### Tune Glitch Wave Speed
+**File**: `index.html`, FRAG_GLITCH shader
+```glsl
+float wavePosition = uBeatTrigger * 3.0;  // Change 3.0 to make wave faster/slower
+float waveDecay = exp(-uBeatTrigger * 12.0);  // Change 12.0 for longer/shorter fade
+```
+
+### Adjust Wave Sharpness
+**File**: `index.html`, FRAG_GLITCH shader
+```glsl
+// Current: sharp edge
+float waveFront = smoothstep(0.15, -0.05, abs(waveCenter));
+// Softer: increase both values
+float waveFront = smoothstep(0.25, 0.05, abs(waveCenter));
+```
+
+### Change Scanline Frequency
+**File**: `index.html`, FRAG_GLITCH shader
+```glsl
+// Current: 8 scanlines per screen height
+float horizontalShift = sin(vUv.y * 8.0 - wavePosition * 6.0) * ...;
+// Finer lines: increase to 12.0 or 16.0
+float horizontalShift = sin(vUv.y * 16.0 - wavePosition * 6.0) * ...;
+```
+
+### Adjust RGB Shift Amount
+**File**: `index.html`, FRAG_GLITCH shader
+```glsl
+float rgbShift = glitch * waveIntensity * 0.015;  // Change 0.015 to adjust intensity
+```
+
+### Change Beat Sensitivity
+**File**: `index.html`, main frame loop
 ```javascript
-const glitchIntensity = state.ampOut > 0.55  // Change beat threshold (0.55)
-  ? 0.8 + state.ampOut * 0.3               // Change peak intensity
-  : 0.2 + state.ampOut * 0.3;              // Change baseline intensity
-```
-
-### Change Block Grid Size
-**File**: `index.html`, FRAG_GLITCH shader
-```glsl
-vec2 blockSize = vec2(16.0, 12.0);  // Change to (8.0, 8.0) for finer grid
-```
-
-### Adjust RGB Channel Shift Amounts
-**File**: `index.html`, FRAG_GLITCH shader
-```glsl
-float r = texture2D(uTex, uv + vec2(glitch * 0.008, 0.0)).r;    // Red offset
-float b = texture2D(uTex, uv - vec2(glitch * 0.005, 0.0)).b;    // Blue offset
+const beatIsActive = state.ampOut > 0.55;  // Change 0.55 to different threshold
+// Higher value (0.7) = only strongest kicks trigger
+// Lower value (0.3) = triggers on quieter sounds too
 ```
 
 ---
@@ -170,10 +223,14 @@ float b = texture2D(uTex, uv - vec2(glitch * 0.005, 0.0)).b;    // Blue offset
 - [x] Three-pass rendering pipeline executes
 - [x] Framebuffers allocate and bind correctly
 - [x] Dither effect visible on plasma
-- [x] Glitch responds to music beats
-- [x] Performance acceptable (60fps target)
-- [x] No console errors in browser
-- [ ] Visual tuning on different displays/colors
+- [x] Glitch wave triggers on beat onset (sharp pulse)
+- [x] Wave sweeps downward with exponential decay
+- [x] Scanlines visible in the glitch wave
+- [x] RGB chromatic aberration on wave
+- [x] Beat detection using rising edge (not sustained state)
+- [x] No wave overlap/stacking on rapid beats
+- [ ] Performance: verify 60fps on mobile/desktop
+- [ ] Visual tuning: adjust wave speed/sharpness to taste
 
 ---
 
