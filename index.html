@@ -792,6 +792,7 @@ const audio = (() => {
       climaxNode.Q.setTargetAtTime(6.5, ctx.currentTime, 0.1);
       noiseGain.gain.setTargetAtTime(0.12, ctx.currentTime, 0.1);
     }
+  }
 
   return { start, readAmp, setHardness, hyper, get live(){ return running; } };
 })();
