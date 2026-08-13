@@ -5,8 +5,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main
-      - claude/shader-background-mobile-gestures-5hl3pj   # go live from the working branch too (no merge needed)
+      - shader   # publish the shader branch directly to the GitHub Pages site
   workflow_dispatch:
 
 permissions:

@@ -20,7 +20,7 @@ a domain-warped plasma shader. It reacts to:
 
 ## Deploy (get the WhatsApp link)
 
-1. Push to `main` (or the working branch listed in `.github/workflows/pages.yml`).
+1. Push to the branch listed in `.github/workflows/pages.yml` (currently `shader`).
 2. **One-time, in the GitHub UI:** repo **Settings → Pages → Source = "GitHub Actions"**.
 3. The Actions run publishes to https://weiyolan.github.io/invitation/ — paste that
    into WhatsApp. The preview card comes from `poster.jpg` + the `og:` tags.
