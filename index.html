@@ -170,6 +170,12 @@
     transform:scale(calc(1 + var(--amp)*0.05)); transform-origin:bottom center;
   }
   #cta-footer.show{ opacity:calc(.72 + var(--amp)*.28); pointer-events:auto; }
+  
+  /* Dither overlay: paint on top of everything but don't block interaction */
+  #dither-overlay{ 
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+  }
   .cta-label{ font-size:clamp(.6rem,2.6cqw,.8rem); letter-spacing:.3em; text-indent:.3em; color:#8ad6c6; }
   .cta-links{ display:flex; align-items:center; gap:.7em; font-size:clamp(.72rem,3.1cqw,.95rem); }
   .cta-links a, .cta-links button{
@@ -255,6 +261,7 @@
   #hype input[type=range]{ flex:1; min-width:0; accent-color:#7fe9d6; cursor:pointer;
     filter:drop-shadow(0 0 calc(var(--amp)*6px) #7fe9d6aa); }
   .clean #hype{ display:none !important; }
+  .clean #dither-overlay{ display:none !important; }
 
   /* HYPE slider BREAKS when someone RSVPs → hypermode */
   #hype.broken{ animation:shatter .6s ease both; }
@@ -383,6 +390,9 @@
     <input id="dbg-slider" type="range" min="0" max="1000" value="0">
     <button id="dbg-next">▶</button>
   </div>
+
+  <!-- Fullscreen dither overlay canvas -->
+  <canvas id="dither-overlay" style="position:fixed; inset:0; z-index:999; pointer-events:none;"></canvas>
 </main>
 
 <script>
@@ -1178,6 +1188,75 @@ window.__seek = i => {
 };
 
 /* =======================================================================
+   Fullscreen dither overlay
+   ======================================================================= */
+const ditherOverlay = (() => {
+  const canvas = $('#dither-overlay');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  const bayerMatrix = [
+    [  0,  8,  2, 10 ],
+    [ 12,  4, 14,  6 ],
+    [  3, 11,  1,  9 ],
+    [ 15,  7, 13,  5 ]
+  ];
+
+  function applyDither() {
+    if (!ctx) return;
+    
+    const w = canvas.width, h = canvas.height;
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    
+    // Adaptive quantization based on amp (music pulse): 18–32 levels
+    const levels = Math.round(18 + state.ampOut * 14);
+    const levelInv = 1.0 / levels;
+    const threshold = 0.12;  // dither strength
+    
+    for (let i = 0; i < data.length; i += 4) {
+      const x = (i / 4) % w;
+      const y = Math.floor((i / 4) / w);
+      
+      // Get Bayer threshold for this pixel
+      const bx = Math.floor(x) % 4;
+      const by = Math.floor(y) % 4;
+      const bayer = bayerMatrix[by][bx] / 16.0;  // normalize to [0..1]
+      
+      // Apply dither to R, G, B channels
+      for (let c = 0; c < 3; c++) {
+        const idx = i + c;
+        const val = data[idx] / 255.0;  // normalize to [0..1]
+        
+        // Add dither threshold
+        const dithered = val + (bayer - 0.5) * threshold;
+        
+        // Quantize to levels
+        const quantized = Math.round(dithered * levels) * levelInv;
+        
+        // Back to [0..255]
+        data[idx] = Math.max(0, Math.min(255, Math.round(quantized * 255)));
+      }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+  }
+  
+  function resize(w, h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  
+  function draw() {
+    // Copy the entire viewport to the dither canvas
+    ctx.drawImage(document.body, 0, 0, canvas.width, canvas.height);
+    // Apply dither effect
+    applyDither();
+  }
+  
+  return { resize, draw };
+})();
+
+/* =======================================================================
    Resize + main loop
    ======================================================================= */
 function resize(){
@@ -1185,6 +1264,7 @@ function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
   if (plasma) plasma.resize(w, h);
+  ditherOverlay.resize(window.innerWidth * dpr, window.innerHeight * dpr);
 }
 
 function frame(now){
@@ -1226,6 +1306,7 @@ function frame(now){
 
   if (plasma) plasma.draw();
   overlay.update();
+  ditherOverlay.draw();
   requestAnimationFrame(frame);
 }
 
@@ -1237,7 +1318,16 @@ initInput();
 initGate();
 initDebug();
 resize();
-new ResizeObserver(resize).observe($('#stage'));
+new ResizeObserver(() => {
+  resize();
+  // Update window-level dither canvas on stage resize
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ditherOverlay.resize(window.innerWidth * dpr, window.innerHeight * dpr);
+}).observe($('#stage'));
+window.addEventListener('resize', () => {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ditherOverlay.resize(window.innerWidth * dpr, window.innerHeight * dpr);
+});
 requestAnimationFrame(frame);
 </script>
 </body>
