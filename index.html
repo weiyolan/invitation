@@ -514,7 +514,7 @@ function synthPulse(t){
 }
 
 /* =======================================================================
-   WebGL plasma layer
+   WebGL plasma layer with dither + glitch post-processing pipeline
    ======================================================================= */
 const plasma = (() => {
   const canvas = $('#plasma');
@@ -527,16 +527,18 @@ const plasma = (() => {
 
   const VERT = `
     attribute vec2 aPos;
-    void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+    varying vec2 vUv;
+    void main(){ gl_Position = vec4(aPos, 0.0, 1.0); vUv = aPos * 0.5 + 0.5; }`;
 
-  const FRAG = `
+  // Original plasma generator
+  const FRAG_PLASMA = `
     #ifdef GL_FRAGMENT_PRECISION_HIGH
       precision highp float;
     #else
       precision mediump float;
     #endif
     uniform vec2  uRes;
-    uniform float uTime;      // seconds, pre-wrapped in JS
+    uniform float uTime;
     uniform vec2  uTilt;
     uniform vec2  uPointer;
     uniform vec2  uSmear;
@@ -570,14 +572,10 @@ const plasma = (() => {
       vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
       uv += uTilt * 0.15;
       uv += uSmear * 0.6;
-      // domain-warped fbm advected by a drifting flow → the field physically moves like
-      // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
-      // seamlessly (no reshuffle at the wrap) and stays small (mediump-safe).
       float w = uTime * 6.2831853 / 60.0;
       vec2 flow = 0.18 * vec2(sin(w), 1.25 * cos(w)) + 0.10 * vec2(cos(2.0 * w), sin(2.0 * w));
-      flow *= 1.0 + 0.25 * uAmp;                       // billows on the pulse
+      flow *= 1.0 + 0.25 * uAmp;
       vec2 q = vec2(fbm(uv + flow), fbm(uv + vec2(5.2, 1.3) + flow * 0.7));
-      // curl: swirl the warp domain by a noise-driven angle → curling smoke
       float ang = 6.2831853 * fbm(uv * 0.7 + q * 0.5 + flow);
       mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
       vec2 warp = rot * (1.8 * q);
@@ -585,25 +583,90 @@ const plasma = (() => {
                     fbm(uv + warp + vec2(8.3, 2.8) - flow * 1.1));
       float f = fbm(uv + 1.8 * r + flow * 1.5);
       float d = length(uv - uPointer * 0.5);
-      f += 0.10 * exp(-d * 3.0);                       // pointer glow
+      f += 0.10 * exp(-d * 3.0);
       float shade = smoothstep(0.12, 0.9, f + 0.3 * length(r));
       vec3 col = palette(f + 0.15 * uAmp);
-      col *= shade * shade;                            // deep near-black valleys, glowing veins
-      // heterogeneous dark purple bleeding through the teal (separate low-freq field)
+      col *= shade * shade;
       float pm = smoothstep(0.42, 0.82, fbm(uv * 0.6 + flow * 0.5 + r * 0.4));
       col = mix(col, vec3(0.24, 0.10, 0.40) * (0.35 + f), pm * 0.6);
-      col += uAmp * 0.12 * palette(0.65);              // beat bloom, in-palette
-      col *= 0.5 + 0.4 * uProgress;                    // ramp intensity across the arc
-      float vig = smoothstep(1.25, 0.22, length(uv));  // vignette
+      col += uAmp * 0.12 * palette(0.65);
+      col *= 0.5 + 0.4 * uProgress;
+      float vig = smoothstep(1.25, 0.22, length(uv));
       col *= 0.30 + 0.56 * vig;
-      // burnt: crush the shadows + cool charred-edge tint (teal/purple, not warm)
       col = pow(col, vec3(1.18));
-      col *= mix(vec3(0.82, 0.94, 1.02), vec3(1.0), smoothstep(0.0, 0.5, vig));  // charred rim
-      // film grain (animated) — heavier in the midtones, like burnt photographic stock
+      col *= mix(vec3(0.82, 0.94, 1.02), vec3(1.0), smoothstep(0.0, 0.5, vig));
       float luma = dot(col, vec3(0.299, 0.587, 0.114));
       float grain = hash(gl_FragCoord.xy * 1.7 + fract(uTime * 0.37) * 311.0) - 0.5;
       col += grain * 0.11 * (0.3 + 0.7 * (1.0 - abs(luma - 0.4) * 2.0));
       gl_FragColor = vec4(col, 1.0);
+    }`;
+
+  // Retro dither post-process (Bayer matrix + quantization)
+  const FRAG_DITHER = `
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+    #else
+      precision mediump float;
+    #endif
+    uniform sampler2D uTex;
+    uniform float uAmp;
+    varying vec2 vUv;
+
+    float hash(vec2 p){
+      return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+    void main(){
+      vec4 col = texture2D(uTex, vUv);
+      // Retro dither: reduce color depth + add blue-noise dither
+      float dither = (hash(vUv * 173.21 + fract(col.r * 311.0)) - 0.5) * 0.08;
+      col.rgb += dither;
+      // Posterize to 4-5 bits per channel for retro effect
+      float bits = 5.0 + uAmp * 2.0;
+      col.rgb = floor(col.rgb * bits) / bits;
+      gl_FragColor = col;
+    }`;
+
+  // Glitch effect (RGB shift + displacement blocks, synced to beat)
+  const FRAG_GLITCH = `
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+    #else
+      precision mediump float;
+    #endif
+    uniform sampler2D uTex;
+    uniform float uTime;
+    uniform float uAmp;
+    uniform float uGlitchIntensity;
+    varying vec2 vUv;
+
+    float hash(vec2 p){
+      return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+    void main(){
+      vec2 uv = vUv;
+      float glitch = uGlitchIntensity;
+      
+      // Glitch is most intense when beat is detected (amp > 0.55)
+      float beatIntensity = step(0.55, uAmp);
+      glitch *= beatIntensity + (1.0 - beatIntensity) * 0.3;
+      
+      // Random block displacement on beat
+      vec2 blockSize = vec2(16.0, 12.0);
+      vec2 block = floor(uv * blockSize) / blockSize;
+      float blockRand = hash(block + floor(uTime * 8.0));
+      
+      // Displace UV only when beat-active, with easing
+      float displace = (blockRand - 0.5) * glitch * 0.15;
+      uv.y += sin(uTime * 12.0 + block.x * 6.28) * displace;
+      uv.x += cos(uTime * 15.0 + block.y * 6.28) * displace * 0.5;
+      
+      // RGB channel shifts (classic glitch look)
+      float r = texture2D(uTex, uv + vec2(glitch * 0.008, 0.0)).r;
+      float g = texture2D(uTex, uv).g;
+      float b = texture2D(uTex, uv - vec2(glitch * 0.005, 0.0)).b;
+      
+      vec4 col = vec4(r, g, b, 1.0);
+      gl_FragColor = col;
     }`;
 
   function sh(type, src){
@@ -611,39 +674,119 @@ const plasma = (() => {
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
     return s;
   }
-  const prog = gl.createProgram();
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-  gl.useProgram(prog);
 
+  function mkProg(vSrc, fSrc){
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vSrc));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fSrc));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  const progPlasma = mkProg(VERT, FRAG_PLASMA);
+  const progDither = mkProg(VERT, FRAG_DITHER);
+  const progGlitch = mkProg(VERT, FRAG_GLITCH);
+
+  // Shared fullscreen quad buffer
   const buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-  const aPos = gl.getAttribLocation(prog, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-  const U = n => gl.getUniformLocation(prog, n);
-  const u = { res:U('uRes'), time:U('uTime'), tilt:U('uTilt'), pointer:U('uPointer'),
-              smear:U('uSmear'), amp:U('uAmp'), progress:U('uProgress'), pal:U('uPal') };
+  // Setup vertex attribs for each program
+  const setupVao = prog => {
+    gl.useProgram(prog);
+    const aPos = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  };
+  setupVao(progPlasma); setupVao(progDither); setupVao(progGlitch);
+
+  // Framebuffer textures for ping-pong rendering
+  const mkFb = () => {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { tex, fb };
+  };
+  let fbPlasma = mkFb(), fbDither = mkFb();
+
+  const U = (prog, n) => gl.getUniformLocation(prog, n);
+  const uPlasma = {
+    res:U(progPlasma, 'uRes'), time:U(progPlasma, 'uTime'),
+    tilt:U(progPlasma, 'uTilt'), pointer:U(progPlasma, 'uPointer'),
+    smear:U(progPlasma, 'uSmear'), amp:U(progPlasma, 'uAmp'),
+    progress:U(progPlasma, 'uProgress'), pal:U(progPlasma, 'uPal')
+  };
+  const uDither = { tex:U(progDither, 'uTex'), amp:U(progDither, 'uAmp') };
+  const uGlitch = {
+    tex:U(progGlitch, 'uTex'), time:U(progGlitch, 'uTime'),
+    amp:U(progGlitch, 'uAmp'), glitchIntensity:U(progGlitch, 'uGlitchIntensity')
+  };
+
+  let paletteFlat = null;
 
   function setPalette(stops){
-    const flat = new Float32Array(stops.flatMap(hexToRgb01));
-    gl.uniform3fv(u.pal, flat);
+    paletteFlat = new Float32Array(stops.flatMap(hexToRgb01));
   }
-  function resize(w, h){ canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
+
+  function resize(w, h){
+    canvas.width = w; canvas.height = h;
+    gl.viewport(0, 0, w, h);
+    // Reallocate framebuffer textures
+    fbPlasma = mkFb(); fbDither = mkFb();
+    gl.bindTexture(gl.TEXTURE_2D, fbPlasma.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, fbDither.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
+
   function draw(){
-    gl.uniform2f(u.res, canvas.width, canvas.height);
-    gl.uniform1f(u.time, state.ambientTime % 60.0);
-    gl.uniform2f(u.tilt, state.tilt.x, state.tilt.y);
-    gl.uniform2f(u.pointer, state.pointer.x, state.pointer.y);
-    gl.uniform2f(u.smear, state.smear.x, state.smear.y);
-    gl.uniform1f(u.amp, state.ampOut);
-    gl.uniform1f(u.progress, state.started ? state.sceneTime / DURATION : 0.15);
+    // --- PASS 1: Render plasma to fbPlasma ---
+    gl.useProgram(progPlasma);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbPlasma.fb);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(uPlasma.res, canvas.width, canvas.height);
+    gl.uniform1f(uPlasma.time, state.ambientTime % 60.0);
+    gl.uniform2f(uPlasma.tilt, state.tilt.x, state.tilt.y);
+    gl.uniform2f(uPlasma.pointer, state.pointer.x, state.pointer.y);
+    gl.uniform2f(uPlasma.smear, state.smear.x, state.smear.y);
+    gl.uniform1f(uPlasma.amp, state.ampOut);
+    gl.uniform1f(uPlasma.progress, state.started ? state.sceneTime / DURATION : 0.15);
+    if (paletteFlat) gl.uniform3fv(uPlasma.pal, paletteFlat);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // --- PASS 2: Dither fbPlasma → fbDither ---
+    gl.useProgram(progDither);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbDither.fb);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fbPlasma.tex);
+    gl.uniform1i(uDither.tex, 0);
+    gl.uniform1f(uDither.amp, state.ampOut);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // --- PASS 3: Glitch fbDither → screen ---
+    gl.useProgram(progGlitch);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fbDither.tex);
+    gl.uniform1i(uGlitch.tex, 0);
+    gl.uniform1f(uGlitch.time, state.ambientTime % 60.0);
+    gl.uniform1f(uGlitch.amp, state.ampOut);
+    // Glitch intensity: 0.3–1.0 range, peaks on beats (amp > 0.55)
+    const glitchIntensity = state.ampOut > 0.55 ? 0.8 + state.ampOut * 0.3 : 0.2 + state.ampOut * 0.3;
+    gl.uniform1f(uGlitch.glitchIntensity, glitchIntensity);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
+
   return { resize, draw, setPalette };
 })();
 
