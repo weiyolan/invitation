@@ -469,6 +469,8 @@ const state = {
   audioLive: false,
   hyper: false,                  // latched when someone RSVPs
   hue: 0, beatHi: false,         // per-beat hue stepping in hypermode
+  beatTrigger: 0,                // time since last beat detected (0–~0.3s)
+  beatWasActive: false,          // track rising edge for beat onset
 };
 
 /* =======================================================================
@@ -626,7 +628,7 @@ const plasma = (() => {
       gl_FragColor = col;
     }`;
 
-  // Glitch effect (RGB shift + displacement blocks, synced to beat)
+  // Glitch effect (RGB shift + wave sweep, triggered on beat)
   const FRAG_GLITCH = `
     #ifdef GL_FRAGMENT_PRECISION_HIGH
       precision highp float;
@@ -637,6 +639,7 @@ const plasma = (() => {
     uniform float uTime;
     uniform float uAmp;
     uniform float uGlitchIntensity;
+    uniform float uBeatTrigger;
     varying vec2 vUv;
 
     float hash(vec2 p){
@@ -646,24 +649,34 @@ const plasma = (() => {
       vec2 uv = vUv;
       float glitch = uGlitchIntensity;
       
-      // Glitch is most intense when beat is detected (amp > 0.55)
-      float beatIntensity = step(0.55, uAmp);
-      glitch *= beatIntensity + (1.0 - beatIntensity) * 0.3;
+      // Beat-triggered wave: sweeps from top to bottom on each kick
+      // uBeatTrigger is reset to 0.0 on each beat, then increments over ~0.3s
+      float waveDecay = exp(-uBeatTrigger * 12.0);  // rapid decay envelope
+      float wavePosition = uBeatTrigger * 3.0;       // wave travels from 0 to 3 (top to bottom + offscreen)
       
-      // Random block displacement on beat
-      vec2 blockSize = vec2(16.0, 12.0);
-      vec2 block = floor(uv * blockSize) / blockSize;
-      float blockRand = hash(block + floor(uTime * 8.0));
+      // Create a sharp wave front: narrow band that sweeps down screen
+      float waveCenter = vUv.y - wavePosition;       // waves sweeps downward
+      float waveFront = smoothstep(0.15, -0.05, abs(waveCenter));  // sharp wave edge
       
-      // Displace UV only when beat-active, with easing
-      float displace = (blockRand - 0.5) * glitch * 0.15;
-      uv.y += sin(uTime * 12.0 + block.x * 6.28) * displace;
-      uv.x += cos(uTime * 15.0 + block.y * 6.28) * displace * 0.5;
+      // Wave intensity falls off as beat fades
+      float waveIntensity = waveFront * waveDecay;
       
-      // RGB channel shifts (classic glitch look)
-      float r = texture2D(uTex, uv + vec2(glitch * 0.008, 0.0)).r;
+      // Combine beat wave with amp-driven falloff for off-beat moments
+      float beatPresent = step(0.55, uAmp);
+      glitch *= mix(0.15, 0.9, waveIntensity * beatPresent);
+      
+      // Horizontal displacement follows the wave: creates scanline glitch effect
+      float horizontalShift = sin(vUv.y * 8.0 - wavePosition * 6.0) * waveIntensity * glitch * 0.12;
+      float verticalShift = waveIntensity * glitch * 0.08;
+      
+      uv.x += horizontalShift;
+      uv.y += verticalShift;
+      
+      // RGB channel shifts (classic glitch look) — intensity tied to wave
+      float rgbShift = glitch * waveIntensity * 0.015;
+      float r = texture2D(uTex, uv + vec2(rgbShift, 0.0)).r;
       float g = texture2D(uTex, uv).g;
-      float b = texture2D(uTex, uv - vec2(glitch * 0.005, 0.0)).b;
+      float b = texture2D(uTex, uv - vec2(rgbShift * 0.7, 0.0)).b;
       
       vec4 col = vec4(r, g, b, 1.0);
       gl_FragColor = col;
@@ -727,7 +740,8 @@ const plasma = (() => {
   const uDither = { tex:U(progDither, 'uTex'), amp:U(progDither, 'uAmp') };
   const uGlitch = {
     tex:U(progGlitch, 'uTex'), time:U(progGlitch, 'uTime'),
-    amp:U(progGlitch, 'uAmp'), glitchIntensity:U(progGlitch, 'uGlitchIntensity')
+    amp:U(progGlitch, 'uAmp'), glitchIntensity:U(progGlitch, 'uGlitchIntensity'),
+    beatTrigger:U(progGlitch, 'uBeatTrigger')
   };
 
   let paletteFlat = null;
@@ -781,6 +795,7 @@ const plasma = (() => {
     gl.uniform1i(uGlitch.tex, 0);
     gl.uniform1f(uGlitch.time, state.ambientTime % 60.0);
     gl.uniform1f(uGlitch.amp, state.ampOut);
+    gl.uniform1f(uGlitch.beatTrigger, state.beatTrigger);
     // Glitch intensity: 0.3–1.0 range, peaks on beats (amp > 0.55)
     const glitchIntensity = state.ampOut > 0.55 ? 0.8 + state.ampOut * 0.3 : 0.2 + state.ampOut * 0.3;
     gl.uniform1f(uGlitch.glitchIntensity, glitchIntensity);
@@ -1160,6 +1175,16 @@ function frame(now){
     if (!state.beatHi && state.ampOut > 0.55){ state.beatHi = true; state.hue = (state.hue + 48) % 360; }
     else if (state.ampOut < 0.35) state.beatHi = false;
   }
+
+  // Beat trigger for glitch wave effect: detect rising edge (beat onset)
+  const beatIsActive = state.ampOut > 0.55;
+  if (beatIsActive && !state.beatWasActive){
+    state.beatTrigger = 0;  // Reset timer on beat onset
+  }
+  state.beatWasActive = beatIsActive;
+  // Increment beat trigger timer (decays over ~0.3s in shader via exp(-t*12))
+  state.beatTrigger += 1 / 60;  // assuming 60fps; adjust for actual framerate if needed
+  state.beatTrigger = Math.min(state.beatTrigger, 0.5);  // cap at 0.5s
 
   // smooth tilt, decay smear
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
