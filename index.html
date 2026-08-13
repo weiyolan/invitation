@@ -361,12 +361,12 @@
   <div id="overlay">
     <div class="beat" data-beat="0"></div>
     <div class="beat" data-beat="1">
-      <div class="boom"><span>B</span><span>O</span><span>O</span><span>M</span></div>
+      <div class="boom"><span>BOOM x YOLAN</span></div>
       <div class="years">30 YEARS</div>
     </div>
     <div class="beat" data-beat="2">
       <div class="dates">18–25 JULY 2027</div>
-      <div class="sub mono">full moon · idanha-a-nova</div>
+      <div class="sub mono">full moon · idanha-a-nova, Portugal</div>
     </div>
     <div class="beat" data-beat="3">
       <div class="personal">The year Boom turns 30 —<br>the year I turn 30.</div>
@@ -408,7 +408,7 @@
   </div>
 
   <div id="rsvp">
-    <div class="rsvp-label">COMING? DROP YOUR NAME</div>
+    <div class="rsvp-label">COMING? LET ME KNOW AND DROP YOUR NAME</div>
     <form id="rsvp-form" autocomplete="off">
       <input id="rsvp-name" type="text" maxlength="40" placeholder="your name" aria-label="your name" required>
       <button type="submit">I'm in ↗</button>
@@ -429,7 +429,7 @@
 
   <div id="gate">
     <div class="play">▶ TAP TO BEGIN</div>
-    <div class="hint">sound on · move your phone · ◂ tap sides ▸</div>
+    <div class="hint">sound on</div>
   </div>
 
   <div id="debug">
@@ -454,7 +454,7 @@ const CONFIG = {
     startYMD:'20270718',         // 18 July 2027 (inclusive)
     endYMD:  '20270726',         // all-day DTEND/gcal end is EXCLUSIVE → 26 July
     location:'Idanha-a-Nova, Portugal',
-    details: 'The year Boom turns 30 — the year I turn 30. Save the dates!',
+    details: 'Boom Festival and Yolan\'s 30th aniversary - featuring live music, art installations, and more!'
   },
   // Live guest list. Project URL + publishable (client) key; row-level security gates it,
   // so it's safe to commit. Needs the `rsvps` table + policies from the README SQL.
@@ -465,7 +465,7 @@ const CONFIG = {
   // Narrative beats and their dwell time (seconds). Tune freely.
   // Stories-style: auto-advances; tap left = back, tap right = next. Arc holds on the last (guests).
   beats: [
-    { id:'ignition', dur:4 },
+    { id:'ignition', dur:1 },
     { id:'boom',     dur:4 },
     { id:'dates',    dur:4 },
     { id:'personal', dur:5 },
