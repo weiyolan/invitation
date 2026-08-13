@@ -41,6 +41,7 @@
     position:fixed; inset:0; overflow:hidden; background:#04100e;
     touch-action:none;   /* the stage owns touch: drag-smear + tap, no browser scroll/zoom */
     container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
+    isolation:isolate;
   }
   @media (min-aspect-ratio: 9/16){
     #stage{
@@ -52,6 +53,44 @@
 
   #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
+  #retro-dither{
+    position:absolute; inset:-4%; z-index:1; pointer-events:none;
+    background:
+      radial-gradient(circle at 50% 45%, rgba(255,255,255,.16), transparent 28%),
+      linear-gradient(180deg, rgba(20,14,28,.18), rgba(8,10,16,.2) 20%, rgba(0,0,0,.6) 100%),
+      repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,.16) 0 1px,
+        rgba(12,12,18,.05) 1px 2px,
+        rgba(255,255,255,.11) 2px 3px,
+        rgba(0,0,0,.14) 3px 4px
+      ),
+      repeating-linear-gradient(
+        to right,
+        rgba(127,233,214,.22) 0 1px,
+        rgba(70,32,90,.16) 1px 2px,
+        rgba(127,233,214,.12) 2px 3px,
+        rgba(0,0,0,.16) 3px 4px
+      );
+    background-size:100% 100%, 100% 100%, 100% 100%, 100% 100%;
+    mix-blend-mode: overlay;
+    opacity:.92;
+    filter:contrast(2.3) brightness(.8) saturate(1.8) blur(.15px);
+    animation:ditherPulse 4.2s ease-in-out infinite alternate,
+              ditherShift 0.7s steps(2) infinite alternate;
+    box-shadow: inset 0 0 24px rgba(127,233,214,.18), inset 0 0 48px rgba(107,74,156,.14);
+  }
+  @keyframes ditherPulse{
+    0%   { opacity:.72; transform:translate3d(-1.2%, .2%, 0) scale(1.03) skewX(-2deg); }
+    35%  { opacity:.9;  transform:translate3d(.6%, -.4%, 0) scale(1.06) skewX(1.2deg) rotate(.18deg); }
+    65%  { opacity:1;   transform:translate3d(-.7%, .8%, 0) scale(1.09) skewX(-1deg) rotate(-.18deg); }
+    100% { opacity:.82; transform:translate3d(1.2%, -.7%, 0) scale(1.11) skewX(2deg); }
+  }
+  @keyframes ditherShift{
+    0%   { background-position:0 0, 0 0, 0 0, 0 0; }
+    50%  { background-position:0 0, 0 0, 0 4px, 7px 0; }
+    100% { background-position:0 0, 0 0, 0 -4px, -7px 0; }
+  }
   /* hypermode: background AND text/foreground hue-shift together, one step per beat */
   body.hyper #plasma,body.hyper #fallback,
   body.hyper #overlay,body.hyper #rsvp{ filter:hue-rotate(var(--hue,0deg)); }
@@ -302,6 +341,7 @@
 <main id="stage">
   <canvas id="plasma"></canvas>
   <div id="fallback"></div>
+  <div id="retro-dither" aria-hidden="true"></div>
 
   <div id="overlay">
     <div class="beat" data-beat="0"></div>
