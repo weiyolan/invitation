@@ -365,38 +365,58 @@
   <div id="retro-dither" aria-hidden="true"></div>
 
   <div id="overlay">
-    <div class="beat" data-beat="0"></div>
-    <div class="beat" data-beat="1">
-      <div class="boom"><span>30 YEARS</span></div>
+    <!-- Slide 1: Hero Cover -->
+    <div class="beat" data-beat="0">
+      <div class="boom"><span>30</span> <span>YEARS</span></div>
       <div class="years">Boom x Yolan</div>
     </div>
+
+    <!-- Slide 2: The Personal Origin -->
+    <div class="beat" data-beat="1">
+      <div class="personal">In 2023, Astrid and I drove Ohayo to Boom for the first time. It was a life-changing experience — and the exact road trip where Noah was created.</div>
+    </div>
+
+    <!-- Slide 3: The Dual Milestone -->
     <div class="beat" data-beat="2">
+      <div class="personal">In 2027, Boom turns 30 — the year I turn 30.</div>
+      <div class="sub personal">I can't think of a more magical place on Earth to celebrate this milestone than under the sun with my closest friends.</div>
+    </div>
+
+    <!-- Slide 4: The Experience -->
+    <div class="beat" data-beat="3">
+      <div class="personal">A full week-long psychedelic journey in the open desert. No sponsors, no branding — just transformative art, sound, and total freedom.</div>
+    </div>
+
+    <!-- Slide 5: The Vibe -->
+    <div class="beat" data-beat="4">
+      <div class="personal">A full week under the Alentejo sun. Lake swims, sunrise sets, 40°C days — come to properly disconnect.</div>
+    </div>
+
+    <!-- Slide 6: Dates & Location -->
+    <div class="beat" data-beat="5">
       <div class="dates">18–25 JULY 2027</div>
       <div class="sub mono">full moon · idanha-a-nova, Portugal</div>
     </div>
-    <div class="beat" data-beat="3">
-      <div class="personal">The year Boom turns 30 —<br>the year I turn 30.</div>
-    </div>
-    <div class="beat" data-beat="4">
-      <div class="urgency mono">SOLD OUT IN HOURS SINCE 2014.<br>SALES OPEN AFTER SUMMER 2026.<br>▶ ACT FAST</div>
-    </div>
-    <div class="beat" data-beat="5">
-      <div class="cta-title">SAVE THE DATES</div>
-    </div>
+
+    <!-- Slide 7: Ticket Logistics & Urgency -->
     <div class="beat" data-beat="6">
+      <div class="urgency mono">TICKETS SELL OUT IN HOURS.<br>SALES OPEN AFTER SUMMER 2026.<br>▶ LOCK IN NOW</div>
+      <div class="sub mono" style="font-size:clamp(.65rem,2.5cqw,.9rem);margin-top:1rem;opacity:.75;">No commitment yet — just let me know if you're interested so I can keep you in the loop when tickets drop!</div>
+    </div>
+
+    <!-- Slide 8: Sign-off / Call to Action -->
+    <div class="beat" data-beat="7">
       <div class="sign">Yolan's 30th</div>
       <div class="place mono">Idanha-a-Nova · Portugal</div>
     </div>
-    <div class="beat" data-beat="7">
-      <div class="tale">Portugal's wildest <b>psytrance</b> gathering. No sponsors, no branding — just art, sound and the open desert.</div>
-    </div>
+
+    <!-- Connecting text before guests -->
     <div class="beat" data-beat="8">
-      <div class="tale">A full week under the <b>Alentejo sun</b>. Camping, sunrise sets, 40°C days — come to <b>properly disconnect</b>.</div>
+      <div class="tale">Portugal's wildest <b>psytrance</b> gathering. No sponsors, no branding — just art, sound, and the open desert.</div>
     </div>
+
+    <!-- Guests screen with RSVP -->
     <div class="beat" data-beat="9">
-      <div class="tale">It <b>sells out in hours</b>. Sales open after summer 2026. If you're in — <b>lock it in now</b>.</div>
-    </div>
-    <div class="beat" data-beat="10">
       <div class="guests-screen">
         <h4>who's coming</h4>
         <ul id="guest-list"><li class="empty">be the first ✦</li></ul>
@@ -471,18 +491,18 @@ const CONFIG = {
   },
   // Narrative beats and their dwell time (seconds). Tune freely.
   // Stories-style: auto-advances; tap left = back, tap right = next. Arc holds on the last (guests).
+  // Fade-in happens automatically on page load before the first beat.
   beats: [
-    { id:'ignition', dur:1 },
-    { id:'boom',     dur:4 },
-    { id:'dates',    dur:4 },
-    { id:'personal', dur:5 },
-    { id:'urgency',  dur:5 },
-    { id:'cta',      dur:6 },
-    { id:'signoff',  dur:5 },
-    { id:'tale1',    dur:5.5 },
-    { id:'tale2',    dur:5.5 },
-    { id:'tale3',    dur:5.5 },
-    { id:'guests',   dur:14 },   // who's coming + RSVP; the arc holds here at the end
+    { id:'hero',           dur:4 },      // 30 YEARS / Boom x Yolan
+    { id:'personal-origin', dur:5 },    // 2023 trip story
+    { id:'dual-milestone',  dur:5 },    // Boom turns 30, I turn 30
+    { id:'experience',      dur:5 },    // psychedelic journey
+    { id:'vibe',            dur:5 },    // Alentejo sun, lake swims
+    { id:'dates-location',  dur:4 },    // 18–25 JULY 2027
+    { id:'urgency',         dur:5 },    // tickets sell out fast
+    { id:'signoff',         dur:5 },    // Yolan's 30th sign-off
+    { id:'tale-btw',        dur:5.5 },  // connecting text
+    { id:'guests',          dur:14 },   // who's coming + RSVP; the arc holds here at the end
   ],
 };
 
@@ -734,9 +754,9 @@ const overlay = (() => {
     blocks.forEach(b => b.classList.toggle('active', +b.dataset.beat === i));
     dots.forEach((d, k) => { d.classList.toggle('now', k === i); d.classList.toggle('done', k < i); });
     dotsWrap.classList.toggle('show', state.started);
-    // save-the-date on cta/signoff, then hand the bottom slot to the RSVP form from the first tale on
-    footer.classList.toggle('show', i >= IDX.cta && i < IDX.tale1);
-    rsvp.classList.toggle('show', i >= IDX.tale1);
+    // save-the-date on signoff, then hand the bottom slot to the RSVP form from tale-btw on
+    footer.classList.toggle('show', i >= IDX['signoff'] && i < IDX['tale-btw']);
+    rsvp.classList.toggle('show', i >= IDX['tale-btw']); // now beat 8 (was 9)
     if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
   }
   return { update };
