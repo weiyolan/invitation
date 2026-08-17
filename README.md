@@ -16,8 +16,9 @@ play in sequence. It reacts to:
 - **The music** → its low end drives the visual pulse.
 - **HYPE slider** (top-left) → cranks the hardstyle in real time: distorts the kick,
   opens the acid resonance, and nudges the tempo up. Too hard? Slide it back down.
-- **RSVP** → from the ticket slide on, the name form is pinned at the bottom; names
-  land on the sign-off slide (shared list needs Supabase — see below).
+- **RSVP** → the name form is pinned at the bottom for the whole slideshow, led by a
+  small purple 🗓️ save-the-date button that downloads the `.ics`; names land on the
+  sign-off slide (shared list needs Supabase — see below).
 
 ## Slides & type scale
 
@@ -70,9 +71,9 @@ device for the session.
 
 ## Checks
 
-`node scripts/verify.mjs` — headless Playwright: every beat renders, the
-`.ics`/Google Calendar dates are right, zero console errors. Also regenerates
-`poster.jpg`.
+`node scripts/verify.mjs` — headless Playwright: every beat renders, the `.ics`
+dates are right, the RSVP row is visible on every beat in the right order, zero
+console errors. Also regenerates `poster.jpg`.
 
 URL flags: `?debug` shows a timeline scrubber, `?clean` hides hints for screen
 recording.

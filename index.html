@@ -135,7 +135,9 @@
      can ever be seen through the tap-to-begin screen. */
   #overlay{ position:absolute; inset:0; z-index:2; pointer-events:none;
     perspective:900px; opacity:0; transition:opacity .9s ease .25s;
-    display:flex; align-items:center; justify-content:center; }
+    display:flex; align-items:center; justify-content:center;
+    /* the RSVP form is pinned to the bottom for the whole show — keep slide copy clear of it */
+    padding-bottom:16cqh; }
   #overlay.live{ opacity:1; }
   .beat{
     position:absolute; left:0; right:0;
@@ -224,24 +226,7 @@
   .guests-screen li:not(.empty)::before{ content:'✦ '; color:var(--spark); }
   .guests-screen li.empty{ opacity:.5; }
 
-  /* save-the-date — minimal text controls, pinned; pumps with the music */
-  #cta-footer{
-    position:absolute; left:0; right:0; bottom:max(7vmin, env(safe-area-inset-bottom));
-    z-index:4; display:flex; flex-direction:column; align-items:center; gap:.55rem;
-    font-family:var(--mono); opacity:0; pointer-events:none; transition:opacity .8s ease;
-    transform:scale(calc(1 + var(--amp)*0.05)); transform-origin:bottom center;
-  }
-  #cta-footer.show{ opacity:calc(.72 + var(--amp)*.28); pointer-events:auto; }
-  .cta-links{ display:flex; align-items:center; gap:.7em; font-size:clamp(.72rem,3.1cqw,.95rem); }
-  .cta-links a, .cta-links button{
-    font-family:var(--mono); color:#e7efee; background:none; border:0; cursor:pointer;
-    padding:.15em 0; border-bottom:1px solid #e7efee55; letter-spacing:.05em;
-    transition:color .2s, border-color .2s;
-  }
-  .cta-links a:hover, .cta-links button:hover{ color:#7fe9d6; border-color:#7fe9d6; }
-  .cta-sep{ opacity:.35; }
-
-  /* RSVP form — pinned during the closing story so it's typable while the credits roll behind it */
+  /* RSVP form — pinned for the whole slideshow so it's typable while the story rolls behind it */
   #rsvp{
     position:absolute; left:0; right:0; bottom:max(7vmin, env(safe-area-inset-bottom));
     z-index:5; display:none; flex-direction:column; align-items:center; gap:.5rem;
@@ -259,18 +244,16 @@
   }
   #rsvp-name:focus{ border-color:#aef7e8; }
   #rsvp-name::placeholder{ color:#e7efee66; }
-  #rsvp-form button,
-  #rsvp-form #btn-ics-mobile{
+  #rsvp-form button{
     font-family:var(--mono); font-weight:700; white-space:nowrap; cursor:pointer;
     color:#04100e; background:#7fe9d6; border:0; border-radius:.4em;
     padding:.55em .9em; font-size:clamp(.75rem,3.1cqw,.95rem); transition:filter .2s;
   }
-  #rsvp-form button:hover,
-  #rsvp-form #btn-ics-mobile:hover{ filter:brightness(1.1); }
-  #rsvp-form button:disabled,
-  #rsvp-form #btn-ics-mobile:disabled{ opacity:.5; cursor:default; }
-  #rsvp-form #btn-ics-mobile{ background:#6b4a9c; color:#e7efee; padding:.55em .7em; }
-  #rsvp-form #btn-ics-mobile:hover{ filter:brightness(1.15); }
+  #rsvp-form button:hover{ filter:brightness(1.1); }
+  #rsvp-form button:disabled{ opacity:.5; cursor:default; }
+  /* save-the-date .ics download — the small purple button leading the row */
+  #rsvp-form #btn-ics{ background:#6b4a9c; color:#e7efee; padding:.55em .7em; }
+  #rsvp-form #btn-ics:hover{ filter:brightness(1.15); }
   #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:#8ad6c6; }
   .clean #rsvp{ display:none !important; }
 
@@ -424,20 +407,11 @@
     </div>
   </div>
 
-  <div id="cta-footer">
-    <div class="slide-label">Save the date</div>
-    <div class="cta-links">
-      <a id="btn-gcal" target="_blank" rel="noopener">Google Calendar ↗</a>
-      <span class="cta-sep">·</span>
-      <button id="btn-ics" title="download .ics calendar file">🗓️</button>
-    </div>
-  </div>
-
   <div id="rsvp">
     <div class="slide-label">Coming? Drop your name</div>
     <form id="rsvp-form" autocomplete="off">
+      <button id="btn-ics" type="button" title="download .ics calendar file" aria-label="save the date — download calendar file">🗓️</button>
       <input id="rsvp-name" type="text" maxlength="40" placeholder="your name" aria-label="your name" required>
-      <button id="btn-ics-mobile" type="button" title="download .ics calendar file">🗓️</button>
       <button type="submit">I'm in ↗</button>
     </form>
     <div id="rsvp-msg" aria-live="polite"></div>
@@ -498,7 +472,7 @@ const CONFIG = {
     { id:'milestone', dur:7 },     // Boom turns 30, I turn 30
     { id:'gathering', dur:7 },     // what Boom actually is
     { id:'lake',      dur:6.5 },   // why you're invited
-    { id:'dates',     dur:5 },     // 18–25 July 2027 + save-the-date links
+    { id:'dates',     dur:5 },     // 18–25 July 2027
     { id:'tickets',   dur:8 },     // ticket timing + arrow down to the form
     { id:'signoff',   dur:16 },    // Yolan's 30th + RSVP; the arc holds here at the end
   ],
@@ -510,7 +484,6 @@ const BEATS = (() => {
   return CONFIG.beats.map(b => { const s = t; t += b.dur; return { ...b, start:s, end:t }; });
 })();
 const DURATION = BEATS[BEATS.length - 1].end;
-const IDX = Object.fromEntries(BEATS.map((b,i)=>[b.id,i]));
 
 /* =======================================================================
    Small helpers
@@ -742,7 +715,6 @@ const plasma = (() => {
 const overlay = (() => {
   const wrap = $('#overlay');
   const blocks = [...document.querySelectorAll('.beat')];
-  const footer = $('#cta-footer');
   const rsvp = $('#rsvp');
   const dotsWrap = $('#dots');
   BEATS.forEach(() => dotsWrap.appendChild(document.createElement('i')));   // one dot per screen
@@ -755,9 +727,8 @@ const overlay = (() => {
     blocks.forEach(b => b.classList.toggle('active', live && +b.dataset.beat === i));
     dots.forEach((d, k) => { d.classList.toggle('now', k === i); d.classList.toggle('done', k < i); });
     dotsWrap.classList.toggle('show', live);
-    // save-the-date links on the dates slide, then the bottom slot goes to the RSVP form
-    footer.classList.toggle('show', live && i === IDX['dates']);
-    rsvp.classList.toggle('show', live && i >= IDX['tickets']);
+    // the RSVP form (save-the-date + name) owns the bottom slot for the whole show
+    rsvp.classList.toggle('show', live);
     if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
   }
   return { update };
@@ -922,7 +893,7 @@ function initInput(){
     const x = p.x;                 // [-1..1]; left half = back, right half = next
     down = null;
     if (!tap) return;
-    if (e.target.closest('button, a, input, label, #cta-footer, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
+    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
     if (!state.started) return;
 
     const dither = $('#retro-dither');
@@ -943,16 +914,8 @@ function initInput(){
 }
 
 /* =======================================================================
-   Save-the-date
+   Save-the-date — .ics download, wired to the purple button in the RSVP row
    ======================================================================= */
-function gcalUrl(){
-  const e = CONFIG.event, q = new URLSearchParams({
-    action:'TEMPLATE', text:e.title,
-    dates:`${e.startYMD}/${e.endYMD}`,
-    details:e.details, location:e.location,
-  });
-  return 'https://calendar.google.com/calendar/render?' + q.toString();
-}
 function downloadIcs(){
   const e = CONFIG.event;
   const ics = [
@@ -1018,7 +981,7 @@ function enterHypermode(){
 }
 function initRsvp(){
   const form = $('#rsvp-form'); if (!form) return;
-  const input = $('#rsvp-name'), msg = $('#rsvp-msg'), btn = form.querySelector('button');
+  const input = $('#rsvp-name'), msg = $('#rsvp-msg'), btn = form.querySelector('button[type=submit]');
   loadGuests();
   form.addEventListener('submit', async e => {
     e.preventDefault();
@@ -1037,9 +1000,7 @@ function initRsvp(){
    ======================================================================= */
 function initUI(){
   if (plasma) plasma.setPalette(CONFIG.palette.stops);
-  $('#btn-gcal').href = gcalUrl();
   $('#btn-ics').onclick = downloadIcs;
-  $('#btn-ics-mobile').onclick = downloadIcs;
   // sound is always on; the rising volume bar just nudges "turn up your device", tap dismisses it
   const vol = $('#vol-hint');
   vol.addEventListener('click', () => vol.classList.add('hide'), { once:true });
