@@ -63,8 +63,13 @@ for (let i = 0; i < BEATS.length; i++){
 }
 ok('poster.jpg written from the hero beat');
 
-// 3. Save-the-date .ics downloads with correct all-day dates (links live on the dates beat)
-await page.evaluate(() => { window.__seek(5); document.querySelector('#gate').classList.add('hide'); });
+// 3. Save-the-date .ics downloads with correct all-day dates (the purple button leads the RSVP row,
+//    which is pinned for the whole show — drop `clean` so the form is visible/clickable)
+await page.evaluate(() => {
+  window.__seek(0);
+  document.body.classList.remove('clean');
+  document.querySelector('#gate').classList.add('hide');
+});
 await page.waitForTimeout(100);
 const [ dl ] = await Promise.all([
   page.waitForEvent('download'),
@@ -74,11 +79,26 @@ const ics = readFileSync(await dl.path(), 'utf8');
 ics.includes('DTSTART;VALUE=DATE:20270718') ? ok('.ics DTSTART = 20270718') : fail('.ics DTSTART wrong');
 ics.includes('DTEND;VALUE=DATE:20270726')   ? ok('.ics DTEND = 20270726 (exclusive)') : fail('.ics DTEND wrong');
 
-// 4. Google Calendar link has the right (end-exclusive) date range
-const href = await page.getAttribute('#btn-gcal', 'href');
-href && href.includes('dates=20270718%2F20270726')
-  ? ok('Google Calendar dates = 20270718/20270726')
-  : fail('gcal href wrong: ' + href);
+// 4. The RSVP form is visible on every beat, not just the closing ones
+for (let i = 0; i < BEATS.length; i++){
+  await page.evaluate(n => window.__seek(n), i);
+  await page.waitForTimeout(120);
+  const shown = await page.isVisible('#rsvp-form');
+  if (!shown) fail(`RSVP form hidden on beat ${i} (${BEATS[i]})`);
+}
+ok('RSVP form visible on all beats');
+
+// The purple .ics button comes first in the row, then the name input, then submit
+const order = await page.evaluate(() =>
+  [...document.querySelectorAll('#rsvp-form > *')].map(el => el.id || el.type));
+JSON.stringify(order) === JSON.stringify(['btn-ics','rsvp-name','submit'])
+  ? ok('RSVP row order = .ics · name · submit')
+  : fail('RSVP row order wrong: ' + order.join(', '));
+
+// The removed save-the-date footer is really gone
+await page.$('#cta-footer')
+  ? fail('#cta-footer still present')
+  : ok('save-the-date CTA footer removed');
 
 // 5. No console/page errors
 errors.length ? fail('console/page errors:\n  ' + errors.join('\n  ')) : ok('no console or page errors');
