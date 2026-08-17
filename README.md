@@ -6,17 +6,26 @@ step, no dependencies).
 
 **Live link (after deploy):** https://weiyolan.github.io/invitation/
 
-Tap to begin → procedural acid techno starts and the invitation text plays over
-a domain-warped plasma shader. It reacts to:
+Tap to begin → the music starts, the invitation fades in from black over a
+domain-warped plasma shader (nothing is shown behind the gate), and eight slides
+play in sequence. It reacts to:
 
 - **Tilt** your phone → the plasma parallax-warps (iOS asks permission on the first tap).
 - **Drag / swipe** → smears the color field.
-- **Tap** → skip ahead a beat (tap again at the end to replay).
+- **Tap** → left half goes back a slide, right half skips ahead.
 - **The music** → its low end drives the visual pulse.
 - **HYPE slider** (top-left) → cranks the hardstyle in real time: distorts the kick,
   opens the acid resonance, and nudges the tempo up. Too hard? Slide it back down.
-- **RSVP** → on the closing credits, drop your name to say you're coming; names roll
-  up at the end of the story (shared list needs Supabase — see below).
+- **RSVP** → from the ticket slide on, the name form is pinned at the bottom; names
+  land on the sign-off slide (shared list needs Supabase — see below).
+
+## Slides & type scale
+
+The eight slides live in `#overlay` in `index.html`, one `.beat` each, and they all
+draw from a single type scale so nothing drifts: `.slide-title` (Bebas Neue),
+`.slide-body` (Space Grotesk, `<b>` for the teal keyword pops, `.slide-body--soft`
+for the quieter second line), `.slide-subtext` and `.slide-label` (Space Mono).
+Changing copy means editing the markup only — no per-slide CSS.
 
 ## Deploy (get the WhatsApp link)
 

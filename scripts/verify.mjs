@@ -47,23 +47,23 @@ await page.evaluate(() => {
 const hasWebGL = await page.evaluate(() => window.__hasWebGL);
 hasWebGL ? ok('WebGL context created') : fail('WebGL unavailable (CSS fallback would engage)');
 
-// 2. Each beat renders a non-black frame; capture poster.png from the BOOM beat.
-const BEATS = ['ignition','boom','dates','personal','urgency','cta','signoff','tale1','tale2','tale3','guests'];
+// 2. Each beat renders a non-black frame; capture poster.jpg from the hero beat.
+const BEATS = ['hero','origin','milestone','gathering','lake','dates','tickets','signoff'];
 for (let i = 0; i < BEATS.length; i++){
   await page.evaluate(n => window.__seek(n), i);
   await page.waitForTimeout(180);
-  // JPEG throughout (grain makes PNGs huge/slow); poster.jpg from the BOOM beat at higher quality
+  // JPEG throughout (grain makes PNGs huge/slow); poster.jpg from the hero beat at higher quality
   const buf = await page.screenshot(
-    i === 1 ? { path: join(root, 'poster.jpg'), type: 'jpeg', quality: 82 }
+    i === 0 ? { path: join(root, 'poster.jpg'), type: 'jpeg', quality: 82 }
             : { type: 'jpeg', quality: 55 }
   );
   buf.length > 12000
     ? ok(`beat ${i} (${BEATS[i]}) rendered — ${(buf.length/1024|0)}KB`)
     : fail(`beat ${i} (${BEATS[i]}) looks blank — ${buf.length} bytes`);
 }
-ok('poster.jpg written from the BOOM beat');
+ok('poster.jpg written from the hero beat');
 
-// 3. Save-the-date .ics downloads with correct all-day dates
+// 3. Save-the-date .ics downloads with correct all-day dates (links live on the dates beat)
 await page.evaluate(() => { window.__seek(5); document.querySelector('#gate').classList.add('hide'); });
 await page.waitForTimeout(100);
 const [ dl ] = await Promise.all([
