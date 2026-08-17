@@ -69,6 +69,21 @@ commit. Anyone can add a name (open insert) — fine for a party; add a captcha 
 if it gets spammed. Until you add keys, submitted names just show locally on that
 device for the session.
 
+## Email alerts on every RSVP
+
+The same form is also a [Netlify Form](https://docs.netlify.com/forms/setup/) named
+`rsvp`, so every submission is stored under **Project configuration → Forms** on
+Netlify, independent of Supabase. To get an email for each one:
+
+Netlify → **Project configuration → Notifications → Emails and webhooks** →
+**Add notification → Email notification**, event **New form submission**, form
+`rsvp`, and the address to notify. Emails arrive with the subject
+"New RSVP for Yolan's 30th" (set by a hidden `subject` field in the form).
+
+Netlify's free tier covers 100 submissions/month. A hidden honeypot field
+(`bot-field`) filters bots; anything Akismet flags lands in the form's **Spam**
+tab rather than your inbox.
+
 ## Checks
 
 `node scripts/verify.mjs` — headless Playwright: every beat renders, the `.ics`

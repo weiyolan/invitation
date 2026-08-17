@@ -254,6 +254,7 @@
   /* save-the-date .ics download — the small purple button leading the row */
   #rsvp-form #btn-ics{ background:#6b4a9c; color:#e7efee; padding:.55em .7em; }
   #rsvp-form #btn-ics:hover{ filter:brightness(1.15); }
+  #rsvp-form .hp{ display:none !important; }   /* honeypot — bots fill it, humans never see it */
   #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:#8ad6c6; }
   .clean #rsvp{ display:none !important; }
 
@@ -409,9 +410,13 @@
 
   <div id="rsvp">
     <div class="slide-label">Coming? Drop your name</div>
-    <form id="rsvp-form" autocomplete="off">
+    <!-- Netlify Forms: submissions land in the Netlify UI and fire the email notification -->
+    <form id="rsvp-form" name="rsvp" method="POST" data-netlify="true" netlify-honeypot="bot-field" autocomplete="off">
+      <input type="hidden" name="form-name" value="rsvp">
+      <input type="hidden" name="subject" value="New RSVP for Yolan's 30th">
+      <p class="hp" hidden><label>Don't fill this out: <input name="bot-field" tabindex="-1"></label></p>
       <button id="btn-ics" type="button" title="download .ics calendar file" aria-label="save the date — download calendar file">🗓️</button>
-      <input id="rsvp-name" type="text" maxlength="40" placeholder="your name" aria-label="your name" required>
+      <input id="rsvp-name" name="name" type="text" maxlength="40" placeholder="your name" aria-label="your name" required>
       <button type="submit">I'm in ↗</button>
     </form>
     <div id="rsvp-msg" aria-live="polite"></div>
@@ -968,6 +973,18 @@ async function addGuest(name){
     return r.ok;
   } catch (_) { return false; }
 }
+// Netlify Forms — records the submission so the email notification goes out.
+// Posts to '/' as urlencoded, which is what Netlify's form handler expects on a static site.
+async function submitToNetlify(form){
+  try {
+    const r = await fetch('/', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(new FormData(form)).toString(),
+    });
+    return r.ok;
+  } catch (_) { return false; }
+}
 // Someone RSVP'd → the HYPE slider breaks and the whole thing goes into hypermode (latched).
 function enterHypermode(){
   if (state.hyper) return;
@@ -988,9 +1005,9 @@ function initRsvp(){
     const name = input.value.trim().slice(0, 40);
     if (!name) return;
     btn.disabled = true; msg.textContent = '';
-    const ok = await addGuest(name);
+    const [notified, ok] = await Promise.all([submitToNetlify(form), addGuest(name)]);
     btn.disabled = false;
-    if (ok){ renderGuest(name); input.value = ''; msg.textContent = "you're on the list ✦"; enterHypermode(); }
+    if (ok || notified){ renderGuest(name); input.value = ''; msg.textContent = "you're on the list ✦"; enterHypermode(); }
     else   { msg.textContent = "couldn't save — try again"; }
   });
 }
