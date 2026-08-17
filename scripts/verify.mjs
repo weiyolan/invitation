@@ -88,9 +88,12 @@ for (let i = 0; i < BEATS.length; i++){
 }
 ok('RSVP form visible on all beats');
 
-// The purple .ics button comes first in the row, then the name input, then submit
+// The purple .ics button comes first in the row, then the name input, then submit.
+// Netlify Forms adds hidden plumbing (form-name, subject, honeypot) — ignore anything invisible.
 const order = await page.evaluate(() =>
-  [...document.querySelectorAll('#rsvp-form > *')].map(el => el.id || el.type));
+  [...document.querySelectorAll('#rsvp-form > *')]
+    .filter(el => el.offsetParent !== null)
+    .map(el => el.id || el.type));
 JSON.stringify(order) === JSON.stringify(['btn-ics','rsvp-name','submit'])
   ? ok('RSVP row order = .ics · name · submit')
   : fail('RSVP row order wrong: ' + order.join(', '));
