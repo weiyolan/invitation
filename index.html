@@ -13,6 +13,17 @@
 <meta property="og:image" content="https://weiyolan.github.io/invitation/poster.jpg">
 <meta name="twitter:card" content="summary_large_image">
 
+<!-- HTML-in-Canvas origin trial — switches on drawElementImage() for visitors, which is what lets the
+     tap ripple refract the *text* and not just the plasma. Chromium honours this with no flags on the
+     visitor's side (Chrome + Edge, desktop and Android); iOS is WebKit, so it never applies there.
+     Scoped to https://yolo-boom-invitation.ywdesign.co and nothing else — on localhost or the
+     github.io copy it is simply ignored, so testing there needs chrome://flags/#canvas-draw-element.
+     Expires 2026-10-20, i.e. ~9 months before the festival. Harmless when it lapses: the capture
+     check in domWave goes false and the page falls back to the background-only ripple. Public by
+     design (origin-scoped, unusable elsewhere) — fine to commit. Re-register at
+     developer.chrome.com/origintrials if the trial gets extended again. -->
+<meta http-equiv="origin-trial" content="AiJDKkzIvsixknsl1GR294/pSe/7MegeUzulrJSFYGbYp4C7Os2IVzCfl94ZnITxL3UXfpXDaGE9rD0/qo8rdQIAAABkeyJvcmlnaW4iOiJodHRwczovL3l3ZGVzaWduLmNvOjQ0MyIsImZlYXR1cmUiOiJIVE1MSW5DYW52YXMiLCJleHBpcnkiOjE3OTI0NTQ0MDAsImlzU3ViZG9tYWluIjp0cnVlfQ==">
+
 <!-- Google Fonts (graceful system fallback if the request fails) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,6 +68,25 @@
 
   #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
+
+  /* html-in-canvas capture layers (see the origin-trial note in <head>).
+     #dom-content holds everything that used to be a direct child of #stage. It starts OUTSIDE
+     #dom-src and is moved in by JS only if drawElementImage actually works — children of a
+     <canvas> are fallback content in browsers without layoutsubtree, i.e. invisible, so doing
+     this in markup would blank the whole invitation on iOS.
+     #dom-out then paints the captured DOM back, refracted by the same wave field as the plasma. */
+  #dom-src,#dom-out,#dom-content{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #dom-src,#dom-content{ z-index:2; }
+  /* isolate so the slide z-indexes (overlay 2 … gate 10) stay inside this box and can't punch
+     through #dom-out. Nothing in here blends with the plasma — only #retro-dither does, and it
+     sits outside. */
+  #dom-content{ isolation:isolate; }
+  /* inert while it's an empty canvas — it only loses hit-testing to #dom-content on tree order,
+     which is too subtle to rely on. JS adds .hosting the moment the page moves inside. */
+  #dom-src{ pointer-events:none; }
+  #dom-src.hosting{ pointer-events:auto; }
+  #dom-src.captured{ opacity:0; }   /* still laid out, still hit-tests — unlike visibility:hidden */
+  #dom-out{ z-index:3; pointer-events:none; }
   #retro-dither{
     position:absolute; inset:-4%; z-index:1; pointer-events:none;
     background:
@@ -102,11 +132,14 @@
     transition:opacity .45s ease;
   }
   #retro-dither.trail::before{ opacity:.72; }
+  /* tap = CRT degauss flash, the way canvasui's retro-dither does it: green-pushed, front-loaded,
+     stepped rather than eased, gone in ~.55s. It's only the impact at the contact point — the
+     travelling wave train that carries outward from here lives in the plasma shader. */
   #retro-dither::after{
     background: radial-gradient(circle at var(--burst-x) var(--burst-y),
-      rgba(127,233,214,.45), rgba(160,132,255,.30) 18%, rgba(255,255,255,.12) 28%, transparent 60%);
+      rgba(186,255,208,.55), rgba(127,233,214,.34) 14%, rgba(96,255,150,.16) 24%, transparent 54%);
   }
-  #retro-dither.tap::after{ animation:tapRipple .82s cubic-bezier(.18,.8,.2,1); }
+  #retro-dither.tap::after{ animation:degauss .55s steps(14) both; }
   @keyframes ditherPulse{
     0%   { opacity:.8;  transform:translate3d(-2.2%, .5%, 0) scale(1.04) skewX(-3deg); }
     30%  { opacity:1;   transform:translate3d(1.5%, -1.2%, 0) scale(1.08) skewX(2.2deg) rotate(.24deg); }
@@ -118,11 +151,14 @@
     50%  { background-position:0 0, 0 0, 0 4px, 7px 0; }
     100% { background-position:0 0, 0 0, 0 -4px, -7px 0; }
   }
-  @keyframes tapRipple{
-    0%   { opacity:0; transform:scale(.68); }
-    18%  { opacity:1; }
-    55%  { opacity:.7; transform:scale(1.02); }
-    100% { opacity:0; transform:scale(1.22); }
+  /* the skew is the horizontal chroma smear a tube makes when the coils fire — steps() above
+     keeps it chunky so it reads as the same hardware as ditherShift, not as a CSS ease. */
+  @keyframes degauss{
+    0%   { opacity:0;   transform:scale(.55) skewX(0deg)  scaleY(1); }
+    6%   { opacity:1;   transform:scale(.72) skewX(-7deg) scaleY(1.06); }
+    22%  { opacity:.85; transform:scale(.92) skewX(4deg)  scaleY(.97); }
+    46%  { opacity:.42; transform:scale(1.06) skewX(-2deg) scaleY(1.02); }
+    100% { opacity:0;   transform:scale(1.16) skewX(0deg)  scaleY(1); }
   }
   /* hypermode: background AND text/foreground hue-shift together, one step per beat */
   body.hyper #plasma,body.hyper #fallback,
@@ -386,6 +422,16 @@
   <div id="fallback"></div>
   <div id="retro-dither" aria-hidden="true"></div>
 
+  <!-- capture host — stays empty until JS moves #dom-content inside it, and only if
+       drawElementImage actually works. See the origin-trial note in <head>. -->
+  <!-- no aria-hidden: once #dom-content is moved in, this canvas *is* the page -->
+  <canvas id="dom-src" layoutsubtree="true"></canvas>
+
+  <!-- everything below used to be a direct child of #stage; wrapped so the whole lot can be
+       captured in one drawElementImage call. Left at this indent on purpose — reindenting
+       ~100 lines of slide copy would bury the actual change in the diff. -->
+  <div id="dom-content">
+
   <div id="overlay">
     <!-- Slide 1: Hero cover -->
     <div class="beat" data-beat="0">
@@ -480,6 +526,10 @@
     <input id="dbg-slider" type="range" min="0" max="1000" value="0">
     <button id="dbg-next">▶</button>
   </div>
+
+  </div><!-- /#dom-content -->
+
+  <canvas id="dom-out" aria-hidden="true"></canvas>
 </main>
 
 <script>
@@ -611,6 +661,105 @@ function synthPulse(t){
 }
 
 /* =======================================================================
+   Tap ripple — one wave field, two consumers.
+   Ported from canvasui.dev/docs/components/ripple: every tap spawns a
+   gaussian-windowed sine wave train whose analytic gradient drives both the
+   plasma's domain warp and the captured DOM's texture offset. Same numbers
+   feed both shaders, so the background and the text can't drift apart.
+   ======================================================================= */
+const WAVE = {
+  max: 6,            // uniform-array slots. 6 keeps the plasma inside the 16 fragment uniform
+                     // vectors GLES2 actually guarantees — it already spends ~9 on res/time/
+                     // tilt/pointer/amp/progress/pal[3].
+  amplitude: 0.5,    // wave height
+  basePx: 340,       // crest travel in CSS px/s at speed 1
+  speed: 0.65,
+  wavelength: 80,    // CSS px between crests
+  rings: 2,          // crests per train
+  decay: 1,          // energy loss — higher dies faster
+  warp: 0.18,        // how far the plasma domain shifts, in height units. Tune to taste.
+  refraction: 100,   // how far the captured DOM bends, in CSS px
+  dispersion: 0.5,   // chromatic split along the wave slopes
+  shine: 0.5,        // glint on the crests
+};
+
+const waves = (() => {
+  const live = [];                                 // { x, y, age, amp } — x/y in NDC [-1..1]
+  const packed = new Float32Array(WAVE.max * 4);   // (x, y, age, amp) per slot, for both shaders
+  // Every length below is divided by the CSS stage height so the shaders work in the plasma's
+  // existing "height units" (uv.y spans -.5...5). The reference does this in raw device pixels,
+  // where s*s reaches ~4e6 and blows past the fp16 ceiling on the mediump path the plasma
+  // shader still supports.
+  const A = new Float32Array(3);   // wavelength, front speed, envelope width
+  const B = new Float32Array(3);   // decay, plasma warp, shine
+  let H = 1, aspect = 1;
+
+  function measure(wCss, hCss){
+    // A degenerate box — hidden tab, mid-orientation-change — must not be trusted: it would pin H
+    // at 1, putting the front speed at 221 height-units/s so every wave dies inside a frame. Worse
+    // pre-layout, where A is still all zeros: front speed 0 means a wave neither travels nor ever
+    // satisfies the prune test, so it sits there forever. Keep the last good numbers instead; the
+    // ResizeObserver on #stage re-measures the moment there's a real layout.
+    if (!(wCss >= 2) || !(hCss >= 2)) return;
+    H = hCss; aspect = wCss / H;
+    A[0] = WAVE.wavelength / H;
+    A[1] = WAVE.basePx * Math.max(WAVE.speed, 0.05) / H;
+    A[2] = WAVE.wavelength * Math.max(WAVE.rings, 1) * 0.5 / H;
+    B[0] = Math.max(WAVE.decay, 0.05); B[1] = WAVE.warp; B[2] = Math.max(WAVE.shine, 0);
+  }
+  measure(405, 720);   // nominal 9:16 phone, so nothing is ever zero before the first real layout
+  function splash(x, y, amp = 1){
+    if (reducedMotion) return;
+    if (live.length >= WAVE.max) live.shift();     // oldest wave gives up its slot
+    live.push({ x, y, age:0, amp });
+  }
+  function step(dt){
+    const reach = Math.hypot(aspect, 1) + A[2] * 3;   // cleared the stage diagonal + the envelope
+    for (let i = live.length - 1; i >= 0; i--){
+      const w = live[i];
+      w.age += dt;
+      if (w.age * A[1] > reach || Math.exp(-B[0] * w.age) * w.amp < 0.012) live.splice(i, 1);
+    }
+    for (let i = 0; i < WAVE.max; i++){
+      const w = live[i], o = i * 4;
+      packed[o]     = w ? w.x : 0;
+      packed[o + 1] = w ? w.y : 0;
+      packed[o + 2] = w ? w.age : 0;
+      packed[o + 3] = w ? w.amp * Math.max(WAVE.amplitude, 0) : 0;
+    }
+  }
+  return { splash, step, measure, packed, A, B,
+           get count(){ return live.length; },
+           get refractH(){ return WAVE.refraction / H; } };   // CSS px -> height units
+})();
+
+// The wave-train gradient, shared verbatim by both shaders so they stay in lockstep. Returns a
+// dimensionless gradient: dh carries 1/length, the wavelength factor cancels it, so the same
+// numbers hold at any stage size. GLSL ES 1.00-safe — constant loop bound, break on the count.
+const WAVE_GLSL = `
+    vec2 waveGrad(vec2 p, float aspect){
+      vec2 g = vec2(0.0);
+      float lam = max(uWaveA.x, 1e-4);
+      float k = 6.2831853 / lam;
+      float w2 = max(uWaveA.z * uWaveA.z, 1e-8);
+      for (int i = 0; i < ${WAVE.max}; i++){
+        if (i >= uWaveN) break;
+        vec4 wv = uWave[i];
+        vec2 dv = p - wv.xy * 0.5 * vec2(aspect, 1.0);   // NDC -> height units, as uPointer does
+        float r = length(dv);
+        float front = uWaveA.y * wv.z;                   // speed * age
+        float s = r - front;                             // signed distance to the crest front
+        float env = exp(-s * s / w2) * exp(-uWaveB.x * wv.z) * wv.w;
+        env *= smoothstep(0.0, 0.08, wv.z);              // ease the birth so taps don't pop
+        env *= inversesqrt(1.0 + front / lam * 0.2);     // spreading loss
+        if (env < 0.0015) continue;
+        float dh = (k * cos(s * k) - 2.0 * s / w2 * sin(s * k)) * env;
+        g += dv / max(r, 1e-4) * dh * lam * 0.16;
+      }
+      return g;
+    }`;
+
+/* =======================================================================
    WebGL plasma layer
    ======================================================================= */
 const plasma = (() => {
@@ -639,6 +788,11 @@ const plasma = (() => {
     uniform float uAmp;
     uniform float uProgress;
     uniform vec3  uPal[3];
+    uniform vec4  uWave[${WAVE.max}];   // (x, y, age, amp) — x/y in NDC
+    uniform int   uWaveN;
+    uniform vec3  uWaveA;               // wavelength, front speed, envelope width (height units)
+    uniform vec3  uWaveB;               // decay, warp, shine
+${WAVE_GLSL}
 
     float hash(vec2 p){
       p = fract(p * vec2(123.34, 456.21));
@@ -669,6 +823,11 @@ const plasma = (() => {
       // uPointer is NDC [-1..1]; uv is normalised by height, so the pointer has to be scaled into
       // uv units (half-extent .5 vertically, .5*aspect horizontally) or it lands off-screen.
       vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0);
+      // Travelling wave train from taps. Distinct from the 'ripple' below, which is the standing
+      // ring that sits under the pointer — this one leaves the tap point and crosses the stage.
+      // Sampled from the tilted uv, same as the pointer, then warps everything downstream.
+      vec2 wg = waveGrad(uv, uRes.x / uRes.y);
+      uv += wg * uWaveB.y;
       // domain-warped fbm advected by a drifting flow → the field physically moves like
       // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
       // seamlessly (no reshuffle at the wrap) and stays small (mediump-safe).
@@ -710,6 +869,10 @@ const plasma = (() => {
       // burnt: crush the shadows + cool charred-edge tint (teal/purple, not warm)
       col = pow(col, vec3(1.28));
       col *= mix(vec3(0.82, 0.94, 1.02), vec3(1.0), smoothstep(0.0, 0.55, vig));  // charred rim
+      // crest lighting from the tap wave — same light vector as the canvasui reference
+      float wgl = dot(wg, vec2(-0.55, -0.8));
+      col += pow(clamp(wgl * 2.2, 0.0, 1.0), 2.0) * uWaveB.z;
+      col *= 1.0 - pow(clamp(-wgl * 1.6, 0.0, 1.0), 2.0) * uWaveB.z * 0.3;
       // film grain (animated) — keep the retro stock feel but let the warp dominate.
       float luma = dot(col, vec3(0.299, 0.587, 0.114));
       float grain = hash(gl_FragCoord.xy * 1.7 + fract(uTime * 0.37) * 311.0) - 0.5;
@@ -738,7 +901,9 @@ const plasma = (() => {
 
   const U = n => gl.getUniformLocation(prog, n);
   const u = { res:U('uRes'), time:U('uTime'), tilt:U('uTilt'), pointer:U('uPointer'),
-              amp:U('uAmp'), progress:U('uProgress'), pal:U('uPal') };
+              amp:U('uAmp'), progress:U('uProgress'), pal:U('uPal'),
+              // '[0]' rather than the bare array name — not every WebGL1 impl accepts the latter
+              wave:U('uWave[0]'), waveN:U('uWaveN'), waveA:U('uWaveA'), waveB:U('uWaveB') };
 
   function setPalette(stops){
     const flat = new Float32Array(stops.flatMap(hexToRgb01));
@@ -752,9 +917,173 @@ const plasma = (() => {
     gl.uniform2f(u.pointer, state.pointer.x, state.pointer.y);
     gl.uniform1f(u.amp, state.ampOut);
     gl.uniform1f(u.progress, state.started ? state.sceneTime / DURATION : 0.15);
+    gl.uniform4fv(u.wave, waves.packed);
+    gl.uniform1i(u.waveN, waves.count);
+    gl.uniform3fv(u.waveA, waves.A);
+    gl.uniform3fv(u.waveB, waves.B);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
   return { resize, draw, setPalette };
+})();
+
+/* =======================================================================
+   DOM refraction — the canvasui html-in-canvas path.
+   #dom-src hosts the real page so drawElementImage can rasterise it; #dom-out
+   paints it back bent by the same wave field the plasma uses. It only engages
+   while a wave is alive — at rest the page is just itself, fully sharp and
+   costing nothing. Without the API this module is null and the DOM is never
+   touched, leaving the background ripple to carry the effect on its own.
+   See the origin-trial note in <head>.
+   ======================================================================= */
+const domWave = (() => {
+  const src = $('#dom-src'), content = $('#dom-content'), out = $('#dom-out');
+  const ctx = src.getContext('2d');
+  if (!ctx || typeof ctx.drawElementImage !== 'function' || typeof src.requestPaint !== 'function') return null;
+  const gl = out.getContext('webgl2', { alpha:true, depth:false, stencil:false,
+                                        antialias:false, premultipliedAlpha:false });
+  if (!gl || gl.isContextLost()) return null;
+
+  // Only safe once the API is confirmed: children of a <canvas> are fallback content without
+  // layoutsubtree, so moving the page in unconditionally would blank the whole invitation.
+  src.appendChild(content);
+  src.classList.add('hosting');   // the canvas is the page now — let it hit-test again
+
+  const VERT = `#version 300 es
+    precision highp float;
+    layout(location = 0) in vec2 aPos;
+    out vec2 vUv;
+    void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+  const FRAG = `#version 300 es
+    precision highp float;
+    in vec2 vUv;
+    out vec4 outColor;
+    uniform sampler2D uDom;
+    uniform vec2  uRes;
+    uniform vec4  uWave[${WAVE.max}];
+    uniform int   uWaveN;
+    uniform vec3  uWaveA;
+    uniform vec3  uWaveB;
+    uniform float uRefract;      // texture displacement, in height units
+    uniform float uDispersion;
+${WAVE_GLSL}
+
+    vec4 dom(vec2 p){ return texture(uDom, clamp(p, vec2(0.0005), vec2(0.9995))); }
+
+    void main(){
+      vec2 pUv = vec2(vUv.x, 1.0 - vUv.y);                  // top-down, matching the capture
+      float aspect = uRes.x / uRes.y;
+      // exactly the plasma's space, so the text bends with the background and not against it
+      vec2 wg = waveGrad((gl_FragCoord.xy - 0.5 * uRes) / uRes.y, aspect);
+      // height units -> texture uv: x normalises by width instead, and pUv.y runs the other way
+      vec2 off = wg * uRefract * vec2(1.0 / aspect, -1.0);
+      vec4 c;
+      if (uDispersion > 0.001){
+        float d = uDispersion * 0.35;
+        vec4 r = dom(pUv + off * (1.0 + d));
+        vec4 g = dom(pUv + off);
+        vec4 b = dom(pUv + off * (1.0 - d));
+        c = vec4(r.r, g.g, b.b, max(max(r.a, g.a), b.a));   // colour fringing on the glyph edges
+      } else {
+        c = dom(pUv + off);
+      }
+      float wgl = dot(wg, vec2(-0.55, -0.8));
+      float glint = pow(clamp(wgl * 2.2, 0.0, 1.0), 2.0) * uWaveB.z;
+      float shade = pow(clamp(-wgl * 1.6, 0.0, 1.0), 2.0) * uWaveB.z * 0.3;
+      // glint scaled by coverage: the plasma already lights its own crests, so hazing the
+      // transparent gaps here would light the background twice.
+      outColor = vec4(c.rgb * (1.0 - shade) + glint * c.a, c.a);
+    }`;
+
+  function sh(type, text){
+    const s = gl.createShader(type); gl.shaderSource(s, text); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const U = n => gl.getUniformLocation(prog, n);
+  const u = { dom:U('uDom'), res:U('uRes'), wave:U('uWave[0]'), waveN:U('uWaveN'),
+              waveA:U('uWaveA'), waveB:U('uWaveB'), refract:U('uRefract'), disp:U('uDispersion') };
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  let dpr = 1, fresh = false, ready = false, active = false;
+
+  src.onpaint = () => {
+    try {
+      ctx.reset();
+      // drawElementImage draws in the context's transform space — the transform it returns is
+      // meant for element.style.transform — so a dpr-sized bitmap needs the scale applied, or
+      // the capture lands in the top-left corner at 1/dpr size.
+      ctx.scale(dpr, dpr);
+      ctx.drawElementImage(content, 0, 0);
+      fresh = true;
+    } catch { /* capture can throw mid-teardown; the next frame just retries */ }
+  };
+
+  function resize(wCss, hCss, ratio){
+    dpr = ratio;
+    const w = Math.max(1, Math.round(wCss * dpr)), h = Math.max(1, Math.round(hCss * dpr));
+    if (src.width !== w || src.height !== h){ src.width = w; src.height = h; }
+    if (out.width !== w || out.height !== h){ out.width = w; out.height = h; }
+    gl.viewport(0, 0, w, h);
+    ready = false;              // step() drops back to the sharp DOM until a new capture lands
+    src.requestPaint();
+  }
+
+  function render(){
+    gl.useProgram(prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(u.dom, 0);
+    gl.uniform2f(u.res, out.width, out.height);
+    gl.uniform4fv(u.wave, waves.packed);
+    gl.uniform1i(u.waveN, waves.count);
+    gl.uniform3fv(u.waveA, waves.A);
+    gl.uniform3fv(u.waveB, waves.B);
+    gl.uniform1f(u.refract, waves.refractH);
+    gl.uniform1f(u.disp, Math.max(WAVE.dispersion, 0));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function step(){
+    const live = waves.count > 0;
+    if (live) src.requestPaint();     // keep the capture fresh while the wave crosses the text
+    if (fresh){
+      fresh = false; ready = true;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    }
+    if (live && ready){
+      // hand over only once there's a texture to show. The wave's smoothstep birth keeps the
+      // first ~80ms near-flat, so the one-frame handover isn't visible.
+      if (!active){ active = true; src.classList.add('captured'); }
+      render();
+    } else if (active){
+      // covers both "wave finished" and "capture went stale" — either way, show the real DOM
+      active = false; src.classList.remove('captured');
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+
+  return { resize, step };
 })();
 
 /* =======================================================================
@@ -959,6 +1288,8 @@ function initInput(){
     if (!state.started) return;
 
     // splash on every tap, UI included — the whitelist below only blocks slide navigation
+    // the travelling wave: p is already NDC, which is the space the wave field works in
+    waves.splash(p.x, p.y, 1);
     if (dither){
       const rs = document.documentElement.style;
       rs.setProperty('--burst-x', splashPct((x + 1) / 2));
@@ -967,7 +1298,7 @@ function initInput(){
       void dither.offsetWidth;
       dither.classList.add('tap');
       clearTimeout(dither._tapTimer);
-      dither._tapTimer = setTimeout(() => dither.classList.remove('tap'), 820);
+      dither._tapTimer = setTimeout(() => dither.classList.remove('tap'), 560);   // matches @keyframes degauss
     }
 
     if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
@@ -1144,11 +1475,21 @@ function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
   if (plasma) plasma.resize(w, h);
+  // the wave field is sized in CSS px — it converts every length to stage-height units itself
+  waves.measure(stage.clientWidth, stage.clientHeight);
+  if (domWave) domWave.resize(stage.clientWidth, stage.clientHeight, dpr);
 }
 
+let lastFrame = 0;
 function frame(now){
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
+
+  // The wave field advances on real elapsed time, not state.ambientTime — that one freezes under
+  // reduced motion and on the debug pause, and a wave mid-flight would freeze with it.
+  const dt = lastFrame ? Math.min(Math.max((now - lastFrame) / 1000, 0), 1 / 30) : 0;
+  lastFrame = now;
+  waves.step(dt);
 
   // amp: follow the real music when it plays (the synth pulse free-runs on another
   // clock and would pump off-beat); deterministic pulse only before/without audio
@@ -1178,6 +1519,7 @@ function frame(now){
   rs.setProperty('--tap-y', splashPct((1 - state.pointer.y) / 2));
 
   if (plasma) plasma.draw();
+  if (domWave) domWave.step();
   overlay.update();
   requestAnimationFrame(frame);
 }
