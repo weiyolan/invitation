@@ -13,7 +13,12 @@ play in sequence. It reacts to:
 - **Tilt** your phone → the plasma parallax-warps (iOS asks permission on the first tap).
 - **Drag / swipe** → smears the color field.
 - **Tap** → left half goes back a slide, right half skips ahead.
-- **The music** → its low end drives the visual pulse.
+- **The music** → its low end drives the visual pulse, and the plasma's liquid drift is
+  locked to the 138 BPM beat grid: it surges on the kick and drags off it (1.45× / 0.55×,
+  with the average pace unchanged).
+- **The colour** → the teal accent randomises every 8 beats, and every 2 beats once
+  somebody has RSVP'd. The whole composition rotates together — plasma field, UI accent
+  and the paired purple — because it is all one hue plus a fixed lightness/chroma table.
 - **HYPE slider** (top-left) → cranks the hardstyle in real time: distorts the kick,
   opens the acid resonance, and nudges the tempo up. Too hard? Slide it back down.
 - **RSVP** → the name form is pinned at the bottom for the whole slideshow, led by a
@@ -39,9 +44,23 @@ Tilt and audio need HTTPS — `file://` won't fire them; the Pages link will.
 
 ## Tuning
 
-Edit the `CONFIG` block at the top of the `<script>` in `index.html`:
-BPM, palette, per-beat durations, the calendar-event details, and the `supabase`
-guest-list keys.
+Edit the `CONFIG` block at the top of the `<script>` in `index.html`: BPM, palette,
+per-beat durations, the calendar-event details, and the `supabase` guest-list keys.
+
+- `BPM` / `beatOffset` — the beat grid. Measured off the bundled track: 138.000 BPM with
+  the first kick 215 ms in. Swap the MP3 and these both need re-measuring, or every
+  beat-locked effect drifts.
+- `latencyNudge` — shift the beat grid if the visuals read early or late on a device. The
+  audible kick lags the decode position by the audio output latency, and WebKit won't
+  report it, so on iPhone this may want a small positive value.
+- `accentHue` + `palette.stops` — the palette is authored in **OKLCH**, as one accent hue
+  plus a fixed `{L, C, dh}` per stop. Rotating `accentHue` moves everything coherently and
+  keeps the designed contrast, which plain hue-rotation does not: at fixed HSL lightness a
+  hue rotation swings real luminance 3×, at fixed OKLCH lightness about 6%. The defaults
+  reproduce the original hexes exactly.
+- `PULSE.depth` (just below `WAVE`) — how hard the liquid surges on the kick. `0.45` is
+  1.45× on the beat and 0.55× off it; `0` restores the old constant drift.
+- `ACCENT.everyN` / `everyNHyper` — beats between colour changes, before and after an RSVP.
 
 ## Guest list (RSVP)
 
