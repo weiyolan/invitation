@@ -103,6 +103,35 @@ await page.$('#cta-footer')
   ? fail('#cta-footer still present')
   : ok('save-the-date CTA footer removed');
 
+// The designer credit rides along with the pinned RSVP block and links out
+await page.$('#credit a[href="https://ywdesign.co"]')
+  ? ok('credit link -> ywdesign.co present')
+  : fail('#credit link to ywdesign.co missing');
+
+// The slide-4 source link is tappable on its own beat. #overlay is pointer-events:none,
+// so the anchor must re-enable its own hit area or the tap falls through to the canvas.
+await page.evaluate(() => window.__seek(3));
+await page.waitForTimeout(150);
+const srcLink = await page.evaluate(() => {
+  const a = document.querySelector('.beat[data-beat="3"] a');
+  if (!a) return { missing: true };
+  const r = a.getBoundingClientRect();
+  const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+  return { pe: getComputedStyle(a).pointerEvents, inert: !!a.closest('[inert]'), isHitTarget: hit === a };
+});
+srcLink.missing        ? fail('slide-4 source link missing')
+  : srcLink.pe !== 'auto' ? fail('source link pointer-events=' + srcLink.pe + ' — #overlay is none, so it needs auto')
+  : srcLink.inert      ? fail('source link inert on its own beat')
+  : !srcLink.isHitTarget ? fail('source link is not the hit target on beat 3 — something overlays it')
+  : ok('slide-4 source link is tappable on its own beat');
+
+// ...and its beat goes inert when hidden, so the invisible link cannot eat taps meant for the canvas
+await page.evaluate(() => window.__seek(5));
+await page.waitForTimeout(150);
+await page.evaluate(() => document.querySelector('.beat[data-beat="3"]').hasAttribute('inert'))
+  ? ok('hidden beats are inert — no phantom hit target')
+  : fail('beat 3 not inert while hidden — its link still swallows taps');
+
 // 5. No console/page errors
 errors.length ? fail('console/page errors:\n  ' + errors.join('\n  ')) : ok('no console or page errors');
 

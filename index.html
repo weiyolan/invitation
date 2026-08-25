@@ -183,6 +183,17 @@
     text-shadow:0 2px 10px #000000aa;
   }
 
+  /* muted inline link — reads as subtext, not a browser-blue link.
+     #overlay is pointer-events:none for the whole show, so an anchor inside a
+     beat has to re-enable its own hit area (inactive beats get `inert` in JS). */
+  .link-muted{
+    color:inherit; text-decoration:underline;
+    text-decoration-color:#e7efee59;    /* ~35% --ink — findable on touch, never loud */
+    text-decoration-thickness:1px; text-underline-offset:.25em;
+    pointer-events:auto;
+  }
+  .link-muted:focus-visible{ outline:1.5px solid var(--spark); outline-offset:.25em; border-radius:2px; }
+
   .slide-label{
     font-family:var(--mono); font-weight:700;
     font-size:clamp(.62rem, 2.4cqw, .85rem);
@@ -256,6 +267,12 @@
   #rsvp-form #btn-ics:hover{ filter:brightness(1.15); }
   #rsvp-form .hp{ display:none !important; }   /* honeypot — bots fill it, humans never see it */
   #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:#8ad6c6; }
+  /* tiny designer credit — the quietest thing on screen, under the RSVP row */
+  #credit{
+    font-size:clamp(.6rem, 2.4cqw, .72rem); letter-spacing:.1em; text-transform:uppercase;
+    color:#e7efee8f;    /* ~56% --ink; dimmed via color not opacity so the link's underline stays visible */
+    text-shadow:0 1px 6px #000;
+  }
   .clean #rsvp{ display:none !important; }
 
   /* tap-to-begin gate */
@@ -375,7 +392,7 @@
     <!-- Slide 4: The gathering -->
     <div class="beat" data-beat="3">
       <p class="slide-body">Portugal's wildest <b>psychedelic gathering</b>. No sponsors, transparent financing, no branding — just <b>art, sound and the open desert</b>.</p>
-    <!-- <p class="slide-subtext"><a href="https://www.boomfestival.org/news/30-years-boom" target="_blank" rel="noopener noreferrer">*link</a></p> -->
+      <p class="slide-subtext"><a class="link-muted" href="https://www.boomfestival.org/news/30-years-boom" target="_blank" rel="noopener noreferrer">*more info here</a></p>
     </div>
 
     <!-- Slide 5: The invitation -->
@@ -422,6 +439,7 @@
       <button type="submit">I'm in ↗</button>
     </form>
     <div id="rsvp-msg" aria-live="polite"></div>
+    <div id="credit">powered by me: <a class="link-muted" href="https://ywdesign.co" target="_blank" rel="noopener noreferrer">ywdesign.co</a></div>
   </div>
 
   <div id="dots" aria-hidden="true"></div>
@@ -731,7 +749,11 @@ const overlay = (() => {
     const live = state.started;      // nothing on screen until the gate is tapped
     state.beat = i;
     wrap.classList.toggle('live', live);
-    blocks.forEach(b => b.classList.toggle('active', live && +b.dataset.beat === i));
+    blocks.forEach(b => {
+      const on = live && +b.dataset.beat === i;
+      b.classList.toggle('active', on);
+      b.toggleAttribute('inert', !on);    // invisible slides must not swallow taps or take tab focus
+    });
     dots.forEach((d, k) => { d.classList.toggle('now', k === i); d.classList.toggle('done', k < i); });
     dotsWrap.classList.toggle('show', live);
     // the RSVP form (save-the-date + name) owns the bottom slot for the whole show
