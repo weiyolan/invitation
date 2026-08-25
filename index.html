@@ -79,14 +79,19 @@
   #dom-src,#dom-content{ z-index:2; }
   /* isolate so the slide z-indexes (overlay 2 … gate 10) stay inside this box and can't punch
      through #dom-out. Nothing in here blends with the plasma — only #retro-dither does, and it
-     sits outside. */
+     sits outside. Load-bearing for the capture too: drawElementImage only accepts an element that
+     is a stacking context, and the older drawElement throws outright without one. */
   #dom-content{ isolation:isolate; }
   /* inert while it's an empty canvas — it only loses hit-testing to #dom-content on tree order,
      which is too subtle to rely on. JS adds .hosting the moment the page moves inside. */
   #dom-src{ pointer-events:none; }
   #dom-src.hosting{ pointer-events:auto; }
-  #dom-src.captured{ opacity:0; }   /* still laid out, still hit-tests — unlike visibility:hidden */
+  /* No CSS hide for the capture host, deliberately. #dom-src is an ancestor of the element being
+     captured, so the `.captured{opacity:0}` that used to live here made every capture taken during
+     a wave come back empty — the whole invitation went missing for the length of the ripple. The
+     sharp page is hidden by clearing the 2D bitmap instead; see rule 1 on domWave. */
   #dom-out{ z-index:3; pointer-events:none; }
+  #dom-out.off{ display:none; }   /* domWave gave up: #dom-content is back under #stage, painting itself */
   #retro-dither{
     position:absolute; inset:-4%; z-index:1; pointer-events:none;
     background:
@@ -411,6 +416,7 @@
     align-items:center; gap:.6rem; }
   #debug.on{ display:flex; }
   #debug input[type=range]{ flex:1; accent-color:#b87a34; }
+  #dbg-dom{ white-space:nowrap; opacity:.8; }
 
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
@@ -533,6 +539,7 @@
     <span id="dbg-beat">0</span>
     <input id="dbg-slider" type="range" min="0" max="1000" value="0">
     <button id="dbg-next">▶</button>
+    <span id="dbg-dom">dom:–</span>
   </div>
 
   </div><!-- /#dom-content -->
@@ -944,11 +951,34 @@ ${WAVE_GLSL}
    costing nothing. Without the API this module is null and the DOM is never
    touched, leaving the background ripple to carry the effect on its own.
    See the origin-trial note in <head>.
+
+   Two rules stop this from ever hiding the invitation, which is exactly what the
+   first cut of it did:
+     1. The sharp page is hidden by CLEARING THE 2D BITMAP, never with CSS. Canvas
+        children under layoutsubtree are laid out and hit-tested but never painted
+        by the browser — "their rendering is not visible to the user unless and
+        until they are explicitly drawn into the canvas" — so that bitmap is the
+        only visible copy of the page. The old `#dom-src.captured{opacity:0}` hid
+        it by making an *ancestor of the element being captured* invisible, and
+        since the paint event fires after the frame's rAF callbacks, every capture
+        taken from then on came back empty: one good refracted frame, then a blank
+        stage for the rest of the wave, then the page back as if nothing happened.
+     2. Nothing is cleared until the pixels are known to be somewhere the user can
+        see them: probe() sanity-checks the capture, the texImage2D upload has to
+        succeed, a one-off dry run reads #dom-out back to prove the shader output
+        is not empty, and the clear only happens in a frame where #dom-out actually
+        drew. Any of those failing calls fail(), which hands #dom-content back to
+        #stage and leaves the plasma to ripple on its own — the same place iOS
+        lands, just reached at runtime.
    ======================================================================= */
 const domWave = (() => {
-  const src = $('#dom-src'), content = $('#dom-content'), out = $('#dom-out');
+  const src = $('#dom-src'), content = $('#dom-content'), out = $('#dom-out'), stage = $('#stage');
   const ctx = src.getContext('2d');
-  if (!ctx || typeof ctx.drawElementImage !== 'function' || typeof src.requestPaint !== 'function') return null;
+  // drawElementImage is the origin-trial spelling (Chrome 148+). drawElement is the older one,
+  // still what CI's pinned Chromium 141 exposes under --enable-blink-features=CanvasDrawElement —
+  // the only way scripts/verify.mjs can drive the real rasteriser locally, so it is worth the || .
+  const drawEl = ctx && (ctx.drawElementImage || ctx.drawElement);
+  if (!drawEl) return null;
   const gl = out.getContext('webgl2', { alpha:true, depth:false, stencil:false,
                                         antialias:false, premultipliedAlpha:false });
   if (!gl || gl.isContextLost()) return null;
@@ -1034,36 +1064,109 @@ ${WAVE_GLSL}
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  let dpr = 1, fresh = false, ready = false, active = false;
+  // mode: 'boot' waiting for a first capture -> 'probing' the invisible dry run -> 'armed' ready
+  // to refract -> 'off' disabled for the session, DOM handed back to #stage. One way, no retries:
+  // if the capture path is broken it stays broken, and one flicker per tap is worse than none.
+  let mode = 'boot', refracting = false, hasTex = false, drew = false;
+  let dpr = 1, captures = 0, blanks = 0, bootFrames = 0, probeFrames = 0, checks = 0;
+  let bootOk = false;                 // one capture has been seen to have pixels in it
+  let lastAlpha = 0, lastProbe = 0, lastError = '', probeErr = '';
 
-  let captureWarned = false;
+  // Arm on the webfonts so the dry run isn't testing a mid-layout page, but never wait on them
+  // forever — a stalled fonts.googleapis.com must not cost the effect.
+  let fontsReady = !(document.fonts && document.fonts.ready);
+  if (!fontsReady) document.fonts.ready.then(() => { fontsReady = true; });
+  setTimeout(() => { fontsReady = true; }, 2000);
 
-  src.onpaint = () => {
+  // The paint event is where a capture can see the *current* frame. Without it (Chromium 141, and
+  // the shimmed API in verify.mjs) drawElementImage still works outside the event, one frame stale,
+  // so capture() runs at the tail of step() instead — same order, same interlocks, 16ms older.
+  const canPaint = typeof src.requestPaint === 'function';
+  const request = canPaint ? () => src.requestPaint() : () => {};
+
+  // 24x42 is a ~1k-pixel thumbnail of the whole stage: coarse enough to be free, fine enough that
+  // any drawn page registers. It answers the one question `fresh`/`ready` never did — are there
+  // actually pixels in there? — before anything is allowed to hide the real DOM.
+  // Verdict: 1 pixels, 0 blank, -1 can't tell. Only 0 is fatal on its own; an unreadable source is
+  // judged by the texImage2D in capture() (same origin-clean rule, so it throws too) and by the dry
+  // run's readback of #dom-out, which is the real proof that pixels reach the screen.
+  const PW = 24, PH = 42;
+  const probeCv = document.createElement('canvas');
+  probeCv.width = PW; probeCv.height = PH;
+  const probeCtx = probeCv.getContext('2d', { willReadFrequently:true });
+  function probe(){
+    try {
+      probeCtx.clearRect(0, 0, PW, PH);
+      probeCtx.drawImage(src, 0, 0, PW, PH);
+      const px = probeCtx.getImageData(0, 0, PW, PH).data;
+      let a = 0;
+      for (let i = 3; i < px.length; i += 4) a += px[i];
+      lastProbe = a;
+      return a > 0 ? 1 : 0;
+    } catch (err){
+      // Not the same failure as an empty capture, and not the same fix. Chromium 141's older
+      // drawElement taints the canvas outright, which makes getImageData *and* texImage2D throw
+      // SecurityError — a browser that does that can't use a 2D canvas as the go-between at all,
+      // and wants gl.texElementImage2D instead (see state().texEl). Say so in the readout rather
+      // than filing it under "blank".
+      lastProbe = -1; probeErr = err.name || 'error';
+      return -1;
+    }
+  }
+
+  function fail(why, err){
+    if (mode === 'off') return;
+    mode = 'off'; refracting = false; hasTex = false; drew = false;
+    lastError = why + (err ? ': ' + err.message : '');
+    console.warn('domWave off —', lastError);
+    // The bitmap goes before the DOM comes back out, or the stale sharp capture double-draws the
+    // page for a frame. Order matters; both land in the same composite.
+    try { ctx.reset(); } catch (e){}
+    if (content.parentNode === src) stage.insertBefore(content, out);
+    src.classList.remove('hosting');
+    out.classList.add('off');
+    try { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); } catch (e){}
+  }
+  out.addEventListener('webglcontextlost', () => fail('webgl context lost'));
+
+  // Capture, hand-off and blanking in that order, in one go: the bitmap is only ever emptied once
+  // its pixels are in the texture *and* #dom-out has drawn them this frame.
+  function capture(){
     try {
       // Identity transform, deliberately. drawElementImage rasterises at the canvas backing-store
       // scale, NOT in the 2D context's transform space — so the bitmap stays dpr-sized (set in
       // resize) and nothing is scaled here. Applying ctx.scale(dpr, dpr) draws the page at 2x on a
       // retina device and clips it to the top-left quadrant, which then gets magnified back across
-      // the stage: the bug that made the text look like it vanished on tap. Verified on the deploy.
+      // the stage: the first version of the vanishing-text bug. Verified on the deploy.
       ctx.reset();
-      ctx.drawElementImage(content, 0, 0);
-      fresh = true;
-    } catch (err) {
-      // latched: this runs inside the frame loop, so an unlatched log would spam thousands of lines.
-      // Swallowing it entirely made a throwing capture indistinguishable from a mis-scaled one.
-      if (!captureWarned){ captureWarned = true; console.warn('drawElementImage failed:', err); }
+      drawEl.call(ctx, content, 0, 0);
+      captures++;
+    } catch (err){
+      // The API throws until an initial snapshot exists, so an early miss during boot is expected —
+      // keep the sharp page and try again next frame. Once we are live it is fatal.
+      if (mode !== 'boot') fail('capture threw', err);
+      return;
     }
-  };
-
-  function resize(wCss, hCss, ratio){
-    dpr = ratio;
-    const w = Math.max(1, Math.round(wCss * dpr)), h = Math.max(1, Math.round(hCss * dpr));
-    if (src.width !== w || src.height !== h){ src.width = w; src.height = h; }
-    if (out.width !== w || out.height !== h){ out.width = w; out.height = h; }
-    gl.viewport(0, 0, w, h);
-    ready = false;              // step() drops back to the sharp DOM until a new capture lands
-    src.requestPaint();
+    if (!refracting) return;                                     // at rest the bitmap *is* the frame
+    // probe() is a getImageData, i.e. a GPU->CPU stall, so it is not something to pay 60x/second.
+    // The failure it guards is deterministic — captures taken once the source is blanked either
+    // work or they don't — and the blanking starts on the capture right after the first render, so
+    // the opening frames of a wave are the only ones that can tell us anything new.
+    if (checks++ < 3 && probe() === 0){ blanks++; return fail('capture came back blank'); }
+    // Guarded because unguarded this is what would kill the whole rAF loop, and because it is the
+    // taint check: a canvas that drawElementImage tainted rejects both getImageData and this upload,
+    // so a browser that taints lands in the fallback with 'texture upload threw' naming exactly why.
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      hasTex = true;
+    } catch (err){ return fail('texture upload threw', err); }
+    // drew is *this* frame's render: step() runs before the paint event, and before capture() on the
+    // no-paint-event path. No render this frame -> no blanking, so a stalled loop, a resize or a
+    // lost context can never leave the page hidden behind an empty #dom-out.
+    if (drew) ctx.reset();
   }
+  if (canPaint) src.onpaint = capture;
 
   function render(){
     gl.useProgram(prog);
@@ -1078,30 +1181,121 @@ ${WAVE_GLSL}
     gl.uniform1f(u.refract, waves.refractH);
     gl.uniform1f(u.disp, Math.max(WAVE.dispersion, 0));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    drew = true;
+  }
+
+  // Full-frame on purpose: any smaller window can land in the gap between two lines of text and
+  // read a true blank. Only ever called once, in the frame that drew — there is no
+  // preserveDrawingBuffer, so that is the only moment the buffer exists.
+  function readback(){
+    try {
+      const px = new Uint8Array(out.width * out.height * 4);
+      gl.readPixels(0, 0, out.width, out.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let a = 0;
+      for (let i = 3; i < px.length; i += 4) a += px[i];
+      lastAlpha = a;
+      return a > 0;
+    } catch (err){ lastError = 'readback threw: ' + err.message; return false; }
+  }
+
+  function advance(){
+    if (mode === 'boot'){
+      // Tight on purpose: between the appendChild above and the first capture landing, the
+      // invitation has no visible copy at all, so a capture path that never starts has to give up
+      // in a few frames rather than a few seconds. One attempt per frame; the API only throws
+      // until it has an initial snapshot, which is a frame or two.
+      if (++bootFrames > 30) return fail('no capture in the first 30 frames');
+      request();
+      if (captures < 1) return;               // nothing rasterised yet — the API throws until it has
+      // The page has no other visible copy from the moment it moves inside the canvas, so the very
+      // first thing to establish is that captures come out with pixels in them — before the fonts,
+      // before the dry run. A browser that has the API but doesn't honour layoutsubtree lands here,
+      // and it must land here in two frames, not after a two-second webfont wait. A few blanks are
+      // tolerated: the first capture can beat the first real layout.
+      if (!bootOk){
+        if (probe() !== 0) bootOk = true;        // pixels, or no way to tell — the dry run rules on it
+        else if (++blanks > 5) return fail('capture came back blank');
+        else return;
+      }
+      // Wait for the webfonts before the dry run: cosmetic, and safe precisely because the page is
+      // already painting itself by now. Unless the probe couldn't confirm that — then get to the dry
+      // run's verdict immediately rather than sit on a possibly blank page for two seconds.
+      if (!fontsReady && lastProbe > 0) return;
+      mode = 'probing'; refracting = true;
+      return;
+    }
+    if (mode === 'probing'){
+      // The dry run, and it is deliberately invisible: with no wave alive the shader offset is
+      // zero, so #dom-out draws a pixel-identical copy. We read that back and clear it again in the
+      // same frame, and drew is dropped so the capture never blanks the source — the user sees the
+      // sharp page throughout, pass or fail. By the first tap we already know the path works.
+      //
+      // refracting is re-asserted every frame rather than once on entry: resize() drops it so a
+      // blanked source can never survive a resize, and the ResizeObserver on #stage fires right
+      // about here during boot — which used to deadlock the dry run into disabling the effect.
+      refracting = true; checks = 0;
+      if (!hasTex){
+        if (++probeFrames > 60) return fail('dry run never got a texture');
+        request();
+        return;
+      }
+      render();
+      const alive = readback();
+      refracting = false; drew = false; hasTex = false;
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      if (!alive) return fail('#dom-out read back empty');
+      mode = 'armed';
+      request();
+      return;
+    }
+    if (waves.count > 0){
+      if (!refracting) checks = 0;   // a fresh wave gets a fresh probe budget
+      refracting = true;
+      request();          // keep the capture fresh while the wave crosses the text
+      // hasTex is dropped at the end of every wave, so the first frame of this one has nothing to
+      // draw and simply leaves the sharp page alone; the capture below hands over for the next.
+      // The wave's smoothstep birth keeps the first ~80ms near-flat, so that frame isn't visible.
+      if (hasTex) render();
+    } else if (refracting){
+      refracting = false; hasTex = false;   // never open a wave on a texture from the last one
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      request();                            // the bitmap is blank right now — repaint the sharp page
+    }
   }
 
   function step(){
-    const live = waves.count > 0;
-    if (live) src.requestPaint();     // keep the capture fresh while the wave crosses the text
-    if (fresh){
-      fresh = false; ready = true;
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-    }
-    if (live && ready){
-      // hand over only once there's a texture to show. The wave's smoothstep birth keeps the
-      // first ~80ms near-flat, so the one-frame handover isn't visible.
-      if (!active){ active = true; src.classList.add('captured'); }
-      render();
-    } else if (active){
-      // covers both "wave finished" and "capture went stale" — either way, show the real DOM
-      active = false; src.classList.remove('captured');
-      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    }
+    if (mode === 'off') return;
+    drew = false;
+    advance();
+    if (!canPaint && mode !== 'off') capture();
   }
 
-  return { resize, step };
+  function resize(wCss, hCss, ratio){
+    if (mode === 'off') return;
+    dpr = ratio;
+    const w = Math.max(1, Math.round(wCss * dpr)), h = Math.max(1, Math.round(hCss * dpr));
+    // Setting .width wipes the 2D bitmap, i.e. the only visible copy of the page — the request/
+    // capture below puts it straight back, inside this same rendering update.
+    if (src.width !== w || src.height !== h){ src.width = w; src.height = h; }
+    if (out.width !== w || out.height !== h){ out.width = w; out.height = h; }
+    gl.viewport(0, 0, w, h);
+    hasTex = false;                 // wrong size now
+    refracting = false; drew = false;   // and never carry a blanked source across a resize
+    request();
+    if (!canPaint) capture();
+  }
+
+  const state = () => ({ mode, refracting, captures, blanks, alpha:lastAlpha, probe:lastProbe,
+                         error:lastError, hosted:content.parentNode === src, paintEvent:canPaint,
+                         // if this is true and the 2D route ever fails, the fix is to move
+                         // #dom-content into #dom-out and upload the element straight to a texture
+                         texEl: typeof gl.texElementImage2D === 'function' });
+
+  return { resize, step, state };
 })();
+// Verify/debug hook: the origin trial only applies on the deploy, so this readout is how the real
+// browser reports what it actually did. See the #dbg-dom line in the debug bar.
+window.__domWaveState = () => domWave ? domWave.state() : { mode:'unsupported' };
 
 /* =======================================================================
    Overlay / beat controller
@@ -1127,7 +1321,15 @@ const overlay = (() => {
     dotsWrap.classList.toggle('show', live);
     // the RSVP form (save-the-date + name) owns the bottom slot for the whole show
     rsvp.classList.toggle('show', live);
-    if (params.has('debug')) $('#dbg-beat').textContent = BEATS[i].id;
+    if (params.has('debug')){
+      $('#dbg-beat').textContent = BEATS[i].id;
+      // the capture path can only be exercised on the deploy, so surface what it actually did
+      const d = window.__domWaveState();
+      const dom = $('#dbg-dom');
+      dom.textContent = 'dom:' + d.mode + (d.blanks ? ' blank×' + d.blanks : '')
+        + (d.error ? ' ' + d.error.slice(0, 60) : '');
+      dom.title = JSON.stringify(d);   // full detail, and window.__domWaveState() in the console
+    }
   }
   return { update };
 })();
