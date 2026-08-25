@@ -35,7 +35,26 @@
     --body:  'Space Grotesk', system-ui, 'Segoe UI', Roboto, sans-serif;   /* running copy */
     --mono:  'Space Mono', ui-monospace, Menlo, Consolas, monospace;   /* labels & subtext */
     --ink: #e7efee;
-    --spark: #7fe9d6;
+    /* ---- accent colour -------------------------------------------------------------------
+       The whole palette is ONE hue plus a fixed (lightness, chroma, hue-offset) table, in OKLCH.
+       Every value below reproduces its original hex exactly (verified 0/255 per channel), so
+       rotating --spark-h moves the teal family and its purple counterpart together and no
+       designed contrast shifts. JS rewrites --spark-h and --spark-lc every few beats.
+       OKLCH and not HSL deliberately: at fixed HSL lightness a hue rotation swings real
+       luminance 3x (66.8% of max), which both flashes and wrecks the balance. At fixed OKLCH L
+       it stays within ~6%. Needs Safari 15.4+/Chrome 111+ — older than the container queries
+       this page already relies on, so no fallback ladder. */
+    --spark-h: 180.76;                                                /* live, rotated by JS */
+    --spark-lc: 86.49% 0.1029;                                        /* live, chroma-clamped */
+    --spark:      oklch(var(--spark-lc) var(--spark-h));              /* was #7fe9d6 */
+    --spark-dim:  oklch(82.19% 0.0790 calc(var(--spark-h) - 1.33));   /* was #8ad6c6 */
+    --spark-lit:  oklch(92.40% 0.0751 calc(var(--spark-h) - 0.42));   /* was #aef7e8 */
+    --purple:     oklch(48.39% 0.1298 calc(var(--spark-h) + 119.41)); /* was #6b4a9c */
+    --stage-bg:   oklch(15.99% 0.0197 calc(var(--spark-h) + 2.31));   /* was #04100e */
+    /* title + gate display gradient — one set of stops, used by both rules */
+    --tt1: oklch(97.11% 0.0233 calc(var(--spark-h) - 3.91));          /* was #e6fbf5 */
+    --tt2: oklch(76.40% 0.1091 calc(var(--spark-h) + 0.10));          /* was #54c9b6 */
+    --tt3: oklch(59.14% 0.0908 calc(var(--spark-h) + 5.58));          /* was #2b8f86 */
     --tx: 0; --ty: 0; --amp: 0;   /* live tilt (-1..1) + music pulse (0..1), set each frame */
     --tap-x:50%; --tap-y:50%;       /* pointer splash — follows hover/drag, set each frame */
     --burst-x:50%; --burst-y:50%;   /* tap splash — set once per tap */
@@ -53,7 +72,7 @@
   /* 9:16 stage. Phones (narrower than 9:16) fill the screen edge-to-edge;
      wide screens get a centered portrait column. */
   #stage{
-    position:fixed; inset:0; overflow:hidden; background:#04100e;
+    position:fixed; inset:0; overflow:hidden; background:var(--stage-bg);
     touch-action:none;   /* the stage owns touch: pointer-follow + tap, no browser scroll/zoom */
     container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
     isolation:isolate;
@@ -62,7 +81,7 @@
     #stage{
       position:relative; inset:auto;
       height:100dvh; aspect-ratio:9/16; width:auto;
-      box-shadow:0 0 120px rgba(70,50,120,.16);
+      box-shadow:0 0 120px oklch(37.80% 0.1148 calc(var(--spark-h) + 112.55) / .16);
     }
   }
 
@@ -123,7 +142,8 @@
     /* ditherShift dropped with the crosshatch: it only moved background-position on those two
        layers, so it would now run 0.56s steps(2) forever for no visible effect. */
     animation:ditherPulse 3.6s ease-in-out infinite alternate;
-    box-shadow: inset 0 0 28px rgba(127,233,214,.24), inset 0 0 56px rgba(107,74,156,.18);
+    box-shadow: inset 0 0 28px oklch(var(--spark-lc) var(--spark-h) / .24),
+                inset 0 0 56px oklch(48.39% 0.1298 calc(var(--spark-h) + 119.41) / .18);
   }
   /* pointer splash: ::before follows hover + drag, ::after bursts on tap. Both sit inside
      #retro-dither so they inherit its contrast/saturate filter and overlay blend. */
@@ -139,7 +159,8 @@
        the fade-in transition 60x/sec. Radius scales about the gradient centre, so the blob
        stays under the pointer (scaling the element itself would drag it off-centre). */
     background: radial-gradient(circle calc(30cqmin + var(--amp) * 9cqmin) at var(--tap-x) var(--tap-y),
-      rgba(127,233,214,.20), rgba(160,132,255,.12) 34%, transparent 70%);
+      oklch(var(--spark-lc) var(--spark-h) / .20),
+      oklch(69.36% 0.1757 calc(var(--spark-h) + 110.87) / .12) 34%, transparent 70%);
     transition:opacity .45s ease;
   }
   #retro-dither.trail::before{ opacity:.72; }
@@ -148,7 +169,8 @@
      travelling wave train that carries outward from here lives in the plasma shader. */
   #retro-dither::after{
     background: radial-gradient(circle at var(--burst-x) var(--burst-y),
-      rgba(186,255,208,.55), rgba(127,233,214,.34) 14%, rgba(96,255,150,.16) 24%, transparent 54%);
+      rgba(186,255,208,.55), oklch(var(--spark-lc) var(--spark-h) / .34) 14%,
+      rgba(96,255,150,.16) 24%, transparent 54%);
   }
   #retro-dither.tap::after{ animation:degauss .55s steps(14) both; }
   @keyframes ditherPulse{
@@ -173,9 +195,10 @@
     46%  { opacity:.42; transform:scale(1.06) skewX(-2deg) scaleY(1.02); }
     100% { opacity:0;   transform:scale(1.16) skewX(0deg)  scaleY(1); }
   }
-  /* hypermode: background AND text/foreground hue-shift together, one step per beat */
-  body.hyper #plasma,body.hyper #fallback,
-  body.hyper #overlay,body.hyper #rsvp{ filter:hue-rotate(var(--hue,0deg)); }
+  /* Hypermode used to hue-rotate the whole stage with a filter, stepped off the amp envelope.
+     Replaced by the accent rotation in frame(): it drives the real palette (uPal + the CSS
+     tokens) instead of post-processing the output, so the text stays crisp — and it drops a
+     full-screen filter pass per frame. */
   #fallback{ z-index:0; display:none; }
 
   /* WebGL-unavailable fallback: animated CSS gradient */
@@ -183,10 +206,10 @@
   .no-webgl #fallback{
     display:block;
     background:
-      radial-gradient(60% 45% at 30% 25%, #0e6a5f88, transparent 60%),
-      radial-gradient(55% 50% at 75% 70%, #3a1d5c88, transparent 60%),
-      radial-gradient(70% 60% at 50% 90%, #2f9d8f44, transparent 60%),
-      #04100e;
+      radial-gradient(60% 45% at 30% 25%, oklch(47.23% 0.0808 calc(var(--spark-h) + 1.44) / .53), transparent 60%),
+      radial-gradient(55% 50% at 75% 70%, oklch(30.67% 0.1083 calc(var(--spark-h) + 120.68) / .53), transparent 60%),
+      radial-gradient(70% 60% at 50% 90%, oklch(63.16% 0.0992 calc(var(--spark-h) + 2.07) / .27), transparent 60%),
+      var(--stage-bg);
     filter:saturate(1.3) blur(4px);
     animation:drift 18s ease-in-out infinite alternate;
   }
@@ -219,10 +242,11 @@
     font-family:var(--title); font-weight:400;
     font-size:clamp(3rem, 18cqw, 10rem);
     line-height:.9; letter-spacing:-.02em;
-    background:linear-gradient(150deg,#e6fbf5,#54c9b6 40%,#2b8f86 68%,#6b4a9c);
+    background:linear-gradient(150deg,var(--tt1),var(--tt2) 40%,var(--tt3) 68%,var(--purple));
     background-size:180% 180%; background-position:calc(50% + var(--tx)*35%) 50%;
     -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 2px 14px #000000aa) drop-shadow(0 0 20px #3f8f8433);
+    filter:drop-shadow(0 2px 14px #000000aa)
+           drop-shadow(0 0 20px oklch(59.70% 0.0802 calc(var(--spark-h) + 2.53) / .2));
     text-wrap:balance;
   }
   .slide-title--sm{ font-size:clamp(2rem, 12cqw, 6.5rem); }
@@ -263,7 +287,7 @@
     font-family:var(--mono); font-weight:700;
     font-size:clamp(.62rem, 2.4cqw, .85rem);
     line-height:1.3; letter-spacing:.14em; text-transform:uppercase;
-    text-indent:.14em; color:#8ad6c6;
+    text-indent:.14em; color:var(--spark-dim);
     text-shadow:0 2px 10px #000000aa;
   }
 
@@ -282,7 +306,7 @@
     animation:arrowBob 1.9s ease-in-out infinite; }
   .arrow-down [stroke]{ fill:none; stroke:var(--spark); stroke-width:2.4;
     stroke-linecap:round; stroke-linejoin:round;
-    filter:drop-shadow(0 0 6px rgba(127,233,214,.55)); }
+    filter:drop-shadow(0 0 6px oklch(var(--spark-lc) var(--spark-h) / .55)); }
   .arrow-down .shaft{ stroke-dasharray:30; animation:arrowDraw 1.9s ease-in-out infinite; }
   @keyframes arrowBob{ 0%,100%{ transform:translateY(-14%) } 55%{ transform:translateY(14%) } }
   @keyframes arrowDraw{ 0%{ stroke-dashoffset:30 } 45%,100%{ stroke-dashoffset:0 } }
@@ -312,26 +336,27 @@
   #rsvp-form{ display:flex; align-items:center; gap:.5em; width:100%; max-width:min(90cqw, 480px); }
   #rsvp-name{
     flex:1; min-width:0; font-family:var(--mono); font-size:clamp(.8rem,3.4cqw,1rem);
-    color:#e7efee; background:#0008; border:1.5px solid #7fe9d6; border-radius:.4em;
+    color:#e7efee; background:#0008; border:1.5px solid var(--spark); border-radius:.4em;
     padding:.5em .7em; outline:none; transition:border-color .2s;
     /* spark border that pumps with the kick (--amp updated every frame) */
-    box-shadow:0 0 calc(3px + var(--amp)*16px) rgba(127,233,214, calc(.35 + var(--amp)*.65)),
-               inset 0 0 calc(var(--amp)*7px) rgba(127,233,214,.25);
+    box-shadow:0 0 calc(3px + var(--amp)*16px)
+                 oklch(var(--spark-lc) var(--spark-h) / calc(.35 + var(--amp)*.65)),
+               inset 0 0 calc(var(--amp)*7px) oklch(var(--spark-lc) var(--spark-h) / .25);
   }
-  #rsvp-name:focus{ border-color:#aef7e8; }
+  #rsvp-name:focus{ border-color:var(--spark-lit); }
   #rsvp-name::placeholder{ color:#e7efee66; }
   #rsvp-form button{
     font-family:var(--mono); font-weight:700; white-space:nowrap; cursor:pointer;
-    color:#04100e; background:#7fe9d6; border:0; border-radius:.4em;
+    color:var(--stage-bg); background:var(--spark); border:0; border-radius:.4em;
     padding:.55em .9em; font-size:clamp(.75rem,3.1cqw,.95rem); transition:filter .2s;
   }
   #rsvp-form button:hover{ filter:brightness(1.1); }
   #rsvp-form button:disabled{ opacity:.5; cursor:default; }
   /* save-the-date .ics download — the small purple button leading the row */
-  #rsvp-form #btn-ics{ background:#6b4a9c; color:#e7efee; padding:.55em .7em; }
+  #rsvp-form #btn-ics{ background:var(--purple); color:#e7efee; padding:.55em .7em; }
   #rsvp-form #btn-ics:hover{ filter:brightness(1.15); }
   #rsvp-form .hp{ display:none !important; }   /* honeypot — bots fill it, humans never see it */
-  #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:#8ad6c6; }
+  #rsvp-msg{ min-height:1em; font-size:.72rem; opacity:.85; color:var(--spark-dim); }
   /* tiny designer credit — the quietest thing on screen, under the RSVP row */
   #credit{
     font-size:clamp(.6rem, 2.4cqw, .72rem); letter-spacing:.1em; text-transform:uppercase;
@@ -344,13 +369,15 @@
   #gate{
     position:absolute; inset:0; z-index:10; cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.2rem;
-    background:radial-gradient(60% 60% at 50% 45%, #08201ccc, #04100ecc 70%, #000 100%);
+    background:radial-gradient(60% 60% at 50% 45%,
+      oklch(22.30% 0.0310 calc(var(--spark-h) + 0.04) / .8),
+      oklch(15.99% 0.0197 calc(var(--spark-h) + 2.31) / .8) 70%, #000 100%);
     transition:opacity .7s ease; text-align:center; padding:0 8cqw;
   }
   #gate.hide{ opacity:0; pointer-events:none; }
   #gate .play{ font-family:var(--title); font-weight:400; letter-spacing:.02em;
     font-size:clamp(2rem,12cqw,5rem); line-height:.95;
-    background:linear-gradient(150deg,#e6fbf5,#54c9b6 40%,#2b8f86 68%,#6b4a9c);
+    background:linear-gradient(150deg,var(--tt1),var(--tt2) 40%,var(--tt3) 68%,var(--purple));
     -webkit-background-clip:text; background-clip:text; color:transparent;
     animation:pulse 1.8s ease-in-out infinite; }
   @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:.9 } 50%{ transform:scale(1.06); opacity:1 } }
@@ -365,7 +392,7 @@
   #vol-hint.show{ display:flex; opacity:.85; }
   #vol-hint.hide{ opacity:0; pointer-events:none; }
   #vol-hint i{ width:4px; height:20%; border-radius:2px;
-    background:linear-gradient(#7fe9d6,#6b4a9c); animation:volrise 1.6s ease-in-out infinite; }
+    background:linear-gradient(var(--spark),var(--purple)); animation:volrise 1.6s ease-in-out infinite; }
   #vol-hint i:nth-child(2){ animation-delay:.2s }
   #vol-hint i:nth-child(3){ animation-delay:.4s }
   #vol-hint i:nth-child(4){ animation-delay:.6s }
@@ -380,9 +407,9 @@
   }
   #hype.show{ display:flex; opacity:.9; }
   #hype label{ font-size:clamp(.55rem,2.4cqw,.72rem); font-weight:700; letter-spacing:.22em;
-    color:#7fe9d6; text-shadow:0 1px 6px #000; white-space:nowrap; }
-  #hype input[type=range]{ flex:1; min-width:0; accent-color:#7fe9d6; cursor:pointer;
-    filter:drop-shadow(0 0 calc(var(--amp)*6px) #7fe9d6aa); }
+    color:var(--spark); text-shadow:0 1px 6px #000; white-space:nowrap; }
+  #hype input[type=range]{ flex:1; min-width:0; accent-color:var(--spark); cursor:pointer;
+    filter:drop-shadow(0 0 calc(var(--amp)*6px) oklch(var(--spark-lc) var(--spark-h) / .67)); }
   .clean #hype{ display:none !important; }
 
   /* HYPE slider BREAKS when someone RSVPs → hypermode */
@@ -404,10 +431,12 @@
   }
   #dots.show{ display:flex; }
   #dots i{ width:6px; height:6px; border-radius:50%; background:#e7efee33;
-    transition:background .3s, transform .3s, box-shadow .1s; }
-  #dots i.done{ background:#7fe9d688; }
-  #dots i.now{ background:#7fe9d6; transform:scale(1.6);
-    box-shadow:0 0 calc(3px + var(--amp)*9px) #7fe9d6; }
+    /* .12s, not .3s: post-RSVP the accent moves every 543ms and playback is 1.6x, so a long
+       colour transition would never settle and the dots would smear continuously. */
+    transition:background .12s, transform .3s, box-shadow .1s; }
+  #dots i.done{ background:oklch(var(--spark-lc) var(--spark-h) / .53); }
+  #dots i.now{ background:var(--spark); transform:scale(1.6);
+    box-shadow:0 0 calc(3px + var(--amp)*9px) var(--spark); }
   .clean #dots{ display:none !important; }
 
   /* debug scrubber (?debug) */
@@ -425,8 +454,8 @@
     #hype.broken{ animation:none; }
     .arrow-down{ animation:none; }
     .arrow-down .shaft{ animation:none; stroke-dasharray:none; }
-    body.hyper #plasma,body.hyper #fallback,
-    body.hyper #overlay,body.hyper #rsvp{ filter:none; }   /* no per-beat color flashing */
+    /* No rule needed for the per-beat colour change any more: frame() gates the accent rotation
+       (and the beat-warped plasma clock) on !reducedMotion, so neither ever starts. */
   }
 </style>
 </head>
@@ -553,8 +582,25 @@
    CONFIG — everything host-editable lives here.
    ======================================================================= */
 const CONFIG = {
-  BPM: 146,
-  palette: { stops:['#05100e','#0e5a52','#7fe9d6'] },  // teal-black → teal → bright cyan-teal (purple mixed in-shader)
+  // Measured off the MP3: 138.0004 BPM over the full 477 s, RMS 4.6 ms, no drift. This was 146,
+  // which slides a whole beat off the record every 3.8 s — the old synthPulse never was on time.
+  BPM: 138,
+  beatOffset: 0.215,   // seconds into the track where the first kick lands (+/- 5 ms)
+  latencyNudge: 0,     // nudge if the surge reads early/late on a device: the audible kick lags the
+                       // decode position by the output latency and WebKit won't report it.
+  // The palette is ONE accent hue plus a fixed (lightness, chroma, hue-offset) table, in OKLCH.
+  // Rebuilding these from accentHue reproduces the original hexes exactly — verified 0/255 on
+  // every channel — so rotating the hue moves the whole composition, teal family and purple
+  // counterpart together, without disturbing a single designed contrast.
+  // OKLCH and not HSL deliberately: at fixed HSL lightness a hue rotation swings real luminance
+  // 3x (66.8% of max), which both flashes and wrecks the balance. At fixed OKLCH L it stays ~6%.
+  accentHue: 180.76,                        // #7fe9d6, the designed teal
+  palette: { stops:[
+    { L:16.09, C:0.0179, dh:   1.29 },      // #05100e  teal-black
+    { L:42.24, C:0.0702, dh:   3.25 },      // #0e5a52  mid teal
+    { L:86.49, C:0.1029, dh:   0.00 },      // #7fe9d6  the accent itself
+    { L:31.41, C:0.1266, dh: 119.75 },      // was the hardcoded vec3(.24,.10,.40) purple bleed
+  ] },
   tiltSensitivity: 1.0,
   event: {
     title:   "Yolan's 30th · Boom Festival 2027",
@@ -602,10 +648,39 @@ const lerp  = (a,b,t) => a + (b - a) * t;
 const SPLASH_SPAN = 1.08 * 1.2;
 const splashPct = t => (50 + (clamp(t, 0, 1) * 100 - 50) / SPLASH_SPAN).toFixed(2) + '%';
 const params = new URLSearchParams(location.search);
-const hexToRgb01 = h => {
-  const n = parseInt(h.slice(1), 16);
-  return [ (n>>16 & 255)/255, (n>>8 & 255)/255, (n & 255)/255 ];
+/* --- OKLCH -> sRGB, so one accent hue can drive the whole palette (see CONFIG.palette) ---------
+   Oklab is perceptually uniform, which is the entire point: rotate hue at fixed L and the real
+   luminance — and so the contrast against the near-black stage — stays put. */
+const oklabToLinear = (L, a, b) => {
+  const l = (L + 0.3963377774*a + 0.2158037573*b) ** 3;
+  const m = (L - 0.1055613458*a - 0.0638541728*b) ** 3;
+  const s = (L - 0.0894841775*a - 1.2914855480*b) ** 3;
+  return [  4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+           -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+           -0.0041960863*l - 0.7034186147*m + 1.7076147010*s ];
 };
+const gam = c => c <= 0.0031308 ? 12.92*c : 1.055*Math.pow(c, 1/2.4) - 0.055;
+const inGamut = c => c[0] >= -1e-4 && c[1] >= -1e-4 && c[2] >= -1e-4 &&
+                     c[0] <= 1.0001 && c[1] <= 1.0001 && c[2] <= 1.0001;
+// The chroma that actually fits in sRGB at this L and hue. Browsers clip out-of-gamut oklch()
+// per-channel, and that clipping is exactly what lets luminance drift as the hue travels — so
+// clamp instead, keeping every hue as vivid as sRGB allows and no more.
+function fitChroma(L, C, h){
+  const hr = h * Math.PI/180, ca = Math.cos(hr), sa = Math.sin(hr);
+  if (inGamut(oklabToLinear(L, C*ca, C*sa))) return C;
+  let lo = 0, hi = C;
+  for (let i = 0; i < 18; i++){
+    const m = (lo + hi)/2;
+    if (inGamut(oklabToLinear(L, m*ca, m*sa))) lo = m; else hi = m;
+  }
+  return lo;
+}
+// L in percent (as authored in CONFIG.palette) -> [r,g,b] 0..1, ready for a shader uniform.
+function oklchToRgb01(Lpct, C, h){
+  const L = Lpct/100, hr = h * Math.PI/180, c = fitChroma(L, C, h);
+  return oklabToLinear(L, c*Math.cos(hr), c*Math.sin(hr))
+           .map(v => Math.min(1, Math.max(0, gam(v))));
+}
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (params.has('clean')) document.body.classList.add('clean');
@@ -630,7 +705,10 @@ const state = {
   ampOut: 0,                     // amp after hypermode boost — feeds shader + CSS
   audioLive: false,
   hyper: false,                  // latched when someone RSVPs
-  hue: 0, beatHi: false,         // per-beat hue stepping in hypermode
+  flowTime: 0,                   // beat-warped plasma clock — what uTime actually gets
+  accentHue: CONFIG.accentHue,   // live accent hue...
+  hueTarget: CONFIG.accentHue,   // ...and where it's sliding to
+  hueSlot: null,                 // which colour block we're in; null = not latched yet
 };
 
 /* =======================================================================
@@ -669,11 +747,78 @@ function replay(){
   if (state.paused || reducedMotion) state.held.scene = 0;
   else { state.startClock = performance.now(); state.seekOffset = 0; }
 }
-// deterministic pulse used when audio is muted/absent (keeps visuals alive + export-safe)
-function synthPulse(t){
-  const phase = (t * CONFIG.BPM / 60) % 1;
-  return Math.exp(-phase * 5.5);
-}
+/* =======================================================================
+   Musical clock — ONE anchored 138 BPM grid, shared by three consumers: the plasma's speed
+   pulse, the accent-colour rotation, and the no-audio fallback pulse.
+
+   The grid lives in MEDIA time, not wall time. track.currentTime advances at playbackRate by
+   definition, so the HYPE slider (1 + h*0.6) and the hyper latch (1.6) retune the grid for free —
+   nothing below ever mentions the rate. That is the whole reason this is cheap.
+   ======================================================================= */
+const frac = x => x - Math.floor(x);          // floor(), so it stays right for negatives too
+const beat = (() => {
+  const SEC = () => 60 / CONFIG.BPM;
+  let aM = -1, aW = 0;                        // anchor: media time, wall time
+  // currentTime is ground truth but is not guaranteed to tick once per rAF — WebKit staircases it,
+  // and a staircased phase makes the pulse stutter. So anchor on the element and extrapolate
+  // between ticks. The 500 ms cap means a stalled/buffering element freezes the grid rather than
+  // letting it run away from the audio.
+  function mediaTime(now){
+    const c = audio.mediaPos();
+    if (c == null){ aM = -1; return null; }
+    if (c !== aM){ aM = c; aW = now; }
+    // A clock that hasn't ticked for a second isn't buffering, it's broken — a failed decode, a
+    // blocked cross-origin load, a codec the browser won't take. Fall through to the free-running
+    // grid rather than freezing the pulse and the colour rotation for the rest of the visit.
+    // Short stalls still hold the grid, so a brief buffer resumes in sync instead of jumping.
+    if (now - aW > 1000) return null;
+    return aM + Math.min(Math.max(now - aW, 0), 500) / 1000 * audio.rate;
+  }
+  // Absolute, never accumulated. state.ambientTime is already frozen under paused/reduced-motion,
+  // so the fallback branch makes the whole grid deterministic with no special-casing anywhere.
+  function at(now){
+    const m = mediaTime(now);
+    return m == null ? state.ambientTime / SEC()
+                     : (m - CONFIG.beatOffset - CONFIG.latencyNudge) / SEC();
+  }
+  return { at };
+})();
+
+// deterministic pulse used when audio is muted/absent (keeps visuals alive + export-safe).
+// Now takes the beat phase, so it finally pumps on the same grid as everything else.
+function synthPulse(phase){ return Math.exp(-phase * 5.5); }
+
+/* =======================================================================
+   Beat-warped plasma clock.
+
+   The shader's flow term is built from integer harmonics of the 60 s uTime wrap, so
+   sin/cos((t mod 60)*2pi/60) is continuous at the wrap for ANY monotonically rising t. The
+   seamless loop therefore survives a warped clock — which is why this whole effect lives out here
+   and the GLSL never learns about the beat.
+
+   We use the EXACT INTEGRAL of the speed profile rather than accumulating dt*speed. For
+   speed(p) = 1 + depth*cos(2pi p) that integral is sin(2pi p)/2pi, and it buys four things at
+   once: the mean rate is exactly 1 (the liquid covers the same ground per minute as it always
+   did), the clock is continuous at every beat line (sin is 0 at both ends), it can never drift,
+   and — the reason it beats an accumulator — flowTime stays a pure function of absolute time, so
+   __seek / ?debug / reduced-motion stay deterministic for free.
+   ======================================================================= */
+const PULSE = { depth: 0.45 };   // 1.45x on the kick, 0.55x off-beat. THE taste knob; 0 = as before.
+const TAU = 6.2831853;
+// The playback rate cancels in the derivative, so the SPEED swing is identical at 1.0x and 1.6x —
+// only the pulses get closer together.
+const warp = (p, secPerBeat) => PULSE.depth * Math.sin(TAU * p) / TAU * secPerBeat;
+
+/* Accent colour. Starts on the designed teal and only travels once the show is actually running,
+   so ?debug, CI screenshots and reduced-motion all stay on the original palette. */
+const ACCENT = {
+  everyN: 8,        // beats between colour changes
+  everyNHyper: 2,   // ...once someone has RSVP'd. At 1.6x playback that's 543 ms.
+  minStep: 55,      // never jump less than this: a raw random hue can land next to the current
+  maxStep: 305,     // one and read as no change at all.
+  tween: 0.09,      // seconds to slide to the new hue — short enough to still hit the beat
+};
+const ACC_STOP = CONFIG.palette.stops[2];   // the accent's own L and C, shared with the CSS token
 
 /* =======================================================================
    Tap ripple — one wave field, two consumers.
@@ -802,7 +947,7 @@ const plasma = (() => {
     uniform vec2  uPointer;
     uniform float uAmp;
     uniform float uProgress;
-    uniform vec3  uPal[3];
+    uniform vec3  uPal[4];
     uniform vec4  uWave[${WAVE.max}];   // (x, y, age, amp) — x/y in NDC
     uniform int   uWaveN;
     uniform vec3  uWaveA;               // wavelength, front speed, envelope width (height units)
@@ -874,9 +1019,10 @@ ${WAVE_GLSL}
       float shade = smoothstep(0.04, 1.2, f + 1.1 * length(r) + ripple * 0.9);
       vec3 col = palette(f + 0.22 * uAmp + ripple * 0.22);
       col *= shade * shade;                               // deep valleys, brighter acid veins
-      // heterogeneous dark purple bleeding through the teal (separate low-freq field)
+      // heterogeneous dark purple bleeding through the teal (separate low-freq field).
+      // uPal[3] so it rotates with the accent instead of anchoring the composition to one hue.
       float pm = smoothstep(0.34, 0.90, fbm(uv * 0.8 + flow * 0.9 + r * 0.7 + ripple));
-      col = mix(col, vec3(0.24, 0.10, 0.40) * (0.52 + f), pm * 0.9);
+      col = mix(col, uPal[3] * (0.52 + f), pm * 0.9);
       col += uAmp * 0.22 * palette(0.70);                 // bigger beat bloom, in-palette
       col *= 0.42 + 0.58 * uProgress;                     // ramp intensity across the arc
       float vig = smoothstep(1.45, 0.18, length(uv));     // vignette
@@ -922,14 +1068,17 @@ ${WAVE_GLSL}
               // '[0]' rather than the bare array name — not every WebGL1 impl accepts the latter
               wave:U('uWave[0]'), waveN:U('uWaveN'), waveA:U('uWaveA'), waveB:U('uWaveB') };
 
-  function setPalette(stops){
-    const flat = new Float32Array(stops.flatMap(hexToRgb01));
+  // Takes the accent hue and rebuilds every stop from CONFIG.palette's (L, C, dh) table, so the
+  // whole field travels with the UI accent and keeps the designed teal<->purple relationship.
+  function setPalette(hue){
+    const flat = new Float32Array(
+      CONFIG.palette.stops.flatMap(p => oklchToRgb01(p.L, p.C, hue + p.dh)));
     gl.uniform3fv(u.pal, flat);
   }
   function resize(w, h){ canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
   function draw(){
     gl.uniform2f(u.res, canvas.width, canvas.height);
-    gl.uniform1f(u.time, state.ambientTime % 60.0);
+    gl.uniform1f(u.time, state.flowTime % 60.0);   // beat-warped, see the warp() note
     gl.uniform2f(u.tilt, state.tilt.x, state.tilt.y);
     gl.uniform2f(u.pointer, state.pointer.x, state.pointer.y);
     gl.uniform1f(u.amp, state.ampOut);
@@ -1457,7 +1606,11 @@ const audio = (() => {
     }
   }
 
-  return { start, readAmp, setHardness, hyper, get live(){ return running; } };
+  return { start, readAmp, setHardness, hyper, get live(){ return running; },
+           get rate(){ return track ? track.playbackRate : 1; },
+           // Position on the record itself. currentTime advances at playbackRate by definition,
+           // so the beat grid never needs a rate term of its own.
+           mediaPos(){ return running && track && !track.paused ? track.currentTime : null; } };
 })();
 
 /* =======================================================================
@@ -1623,7 +1776,7 @@ function initRsvp(){
    UI wiring — fixed palette, save-the-date, volume-bar hint
    ======================================================================= */
 function initUI(){
-  if (plasma) plasma.setPalette(CONFIG.palette.stops);
+  if (plasma) plasma.setPalette(CONFIG.accentHue);
   $('#btn-ics').onclick = downloadIcs;
   // sound is always on; the rising volume bar just nudges "turn up your device", tap dismisses it
   const vol = $('#vol-hint');
@@ -1699,7 +1852,7 @@ function resize(){
   if (domWave) domWave.resize(stage.clientWidth, stage.clientHeight, dpr);
 }
 
-let lastFrame = 0;
+let lastFrame = 0, lastPalHue = -1;
 function frame(now){
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
@@ -1710,15 +1863,43 @@ function frame(now){
   lastFrame = now;
   waves.step(dt);
 
-  // amp: follow the real music when it plays (the synth pulse free-runs on another
-  // clock and would pump off-beat); deterministic pulse only before/without audio
-  state.amp = lerp(state.amp, audio.live ? audio.readAmp() : synthPulse(state.ambientTime), 0.35);
+  // ---- one beat grid, three consumers: the plasma's pace, the fallback amp, the accent hue ----
+  const beats = beat.at(now);
+  const phase = frac(beats);
+  // The plasma surges on the kick and drags off it. Absolute, not accumulated, so this is a pure
+  // function of the ambient clock — and a frozen clock carries no warp at all, because there is no
+  // beat to surge on. That keeps ?debug, __seek and reduced-motion pixel-identical to a build
+  // without any of this, which is what stops the committed poster.jpg drifting.
+  state.flowTime = state.ambientTime +
+    (state.paused || reducedMotion ? 0 : warp(phase, 60 / CONFIG.BPM / audio.rate));
+
+  // amp: follow the real music when it plays; the deterministic pulse now rides the same grid,
+  // so before/without audio it pumps on-beat instead of free-running off it.
+  // On a frozen clock there is no envelope to converge towards, so snap instead of easing —
+  // otherwise the held value depends on how many frames happened to elapse, and the debug/verify
+  // screenshots come out slightly different every run.
+  const ampTarget = audio.live ? audio.readAmp() : synthPulse(phase);
+  state.amp = (state.paused || reducedMotion) ? ampTarget : lerp(state.amp, ampTarget, 0.35);
   // hypermode pumps everything harder; ampOut feeds the shader + all CSS pumping
   state.ampOut = state.hyper ? clamp(state.amp * 1.7, 0, 1.4) : state.amp;
-  // per-beat theme color in hypermode: step the hue on each kick (amp rising edge)
-  if (state.hyper && !reducedMotion){
-    if (!state.beatHi && state.ampOut > 0.55){ state.beatHi = true; state.hue = (state.hue + 48) % 360; }
-    else if (state.ampOut < 0.35) state.beatHi = false;
+
+  // Accent hue: a random jump every N beats, N dropping once someone has RSVP'd. Held still
+  // unless the show is genuinely running — that is what keeps CI, ?debug and reduced-motion on
+  // the designed teal, and so keeps poster.jpg stable.
+  if (state.started && !state.paused && !reducedMotion){
+    const n = state.hyper ? ACCENT.everyNHyper : ACCENT.everyN;
+    const slot = Math.floor(beats / n);
+    if (state.hueSlot === null) state.hueSlot = slot;      // first live frame: latch, don't jump
+    else if (slot !== state.hueSlot){
+      state.hueSlot = slot;
+      // !== rather than >: the track loops at 1096.85 beats, so `beats` steps backwards at the
+      // seam and a > test would sit dead until it caught back up.
+      state.hueTarget = (state.hueTarget + ACCENT.minStep
+                         + Math.random() * (ACCENT.maxStep - ACCENT.minStep)) % 360;
+    }
+    // slide the short way round the wheel, so 350 -> 20 never sweeps back through cyan
+    const d = ((state.hueTarget - state.accentHue + 540) % 360) - 180;
+    state.accentHue = (state.accentHue + d * Math.min(1, dt / ACCENT.tween) + 360) % 360;
   }
 
   // smooth tilt + pointer (the pointer chases faster than tilt — it has to stay under the cursor)
@@ -1732,10 +1913,20 @@ function frame(now){
   rs.setProperty('--tx', state.tilt.x.toFixed(3));
   rs.setProperty('--ty', state.tilt.y.toFixed(3));
   rs.setProperty('--amp', state.ampOut.toFixed(3));
-  rs.setProperty('--hue', state.hue + 'deg');
+  rs.setProperty('--spark-h', state.accentHue.toFixed(2));
+  // Chroma travels with the hue: sRGB can't hold the accent's full chroma all the way round, and
+  // letting the browser clip instead is exactly what would make luminance — and contrast — drift.
+  rs.setProperty('--spark-lc',
+    ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
   // the splash rides the smoothed pointer — the same lerp the shader ripple uses
   rs.setProperty('--tap-x', splashPct((state.pointer.x + 1) / 2));
   rs.setProperty('--tap-y', splashPct((1 - state.pointer.y) / 2));
+
+  // one uniform upload per actual change, not per frame
+  if (plasma && Math.abs(state.accentHue - lastPalHue) > 0.01){
+    plasma.setPalette(state.accentHue);
+    lastPalHue = state.accentHue;
+  }
 
   if (plasma) plasma.draw();
   if (domWave) domWave.step();
