@@ -26,6 +26,8 @@
     --ink: #e7efee;
     --spark: #7fe9d6;
     --tx: 0; --ty: 0; --amp: 0;   /* live tilt (-1..1) + music pulse (0..1), set each frame */
+    --tap-x:50%; --tap-y:50%;       /* pointer splash — follows hover/drag, set each frame */
+    --burst-x:50%; --burst-y:50%;   /* tap splash — set once per tap */
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }
@@ -41,7 +43,7 @@
      wide screens get a centered portrait column. */
   #stage{
     position:fixed; inset:0; overflow:hidden; background:#04100e;
-    touch-action:none;   /* the stage owns touch: drag-smear + tap, no browser scroll/zoom */
+    touch-action:none;   /* the stage owns touch: pointer-follow + tap, no browser scroll/zoom */
     container-type:size; container-name:stage;   /* text sizes in cq units scale to the stage box */
     isolation:isolate;
   }
@@ -56,7 +58,6 @@
   #plasma,#fallback{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #plasma{ z-index:0; }
   #retro-dither{
-    --tap-x:50%; --tap-y:50%;
     position:absolute; inset:-4%; z-index:1; pointer-events:none;
     background:
       radial-gradient(circle at 50% 45%, rgba(255,255,255,.22), transparent 28%),
@@ -83,14 +84,29 @@
               ditherShift 0.56s steps(2) infinite alternate;
     box-shadow: inset 0 0 28px rgba(127,233,214,.24), inset 0 0 56px rgba(107,74,156,.18);
   }
-  #retro-dither::before{
+  /* pointer splash: ::before follows hover + drag, ::after bursts on tap. Both sit inside
+     #retro-dither so they inherit its contrast/saturate filter and overlay blend. */
+  #retro-dither::before,
+  #retro-dither::after{
     content:""; position:absolute; inset:-10%;
-    background: radial-gradient(circle at var(--tap-x) var(--tap-y),
-      rgba(127,233,214,.45), rgba(160,132,255,.30) 18%, rgba(255,255,255,.12) 28%, transparent 60%);
     opacity:0; mix-blend-mode:screen;
     pointer-events:none;
   }
-  #retro-dither.tap::before{ animation:tapRipple .82s cubic-bezier(.18,.8,.2,1); }
+  /* the follower runs far dimmer than the burst — the parent's contrast(2.8) saturate(2.2) amplifies it hard */
+  #retro-dither::before{
+    /* the beat pumps the radius, not the opacity: --amp changes every frame and would restart
+       the fade-in transition 60x/sec. Radius scales about the gradient centre, so the blob
+       stays under the pointer (scaling the element itself would drag it off-centre). */
+    background: radial-gradient(circle calc(30cqmin + var(--amp) * 9cqmin) at var(--tap-x) var(--tap-y),
+      rgba(127,233,214,.20), rgba(160,132,255,.12) 34%, transparent 70%);
+    transition:opacity .45s ease;
+  }
+  #retro-dither.trail::before{ opacity:.72; }
+  #retro-dither::after{
+    background: radial-gradient(circle at var(--burst-x) var(--burst-y),
+      rgba(127,233,214,.45), rgba(160,132,255,.30) 18%, rgba(255,255,255,.12) 28%, transparent 60%);
+  }
+  #retro-dither.tap::after{ animation:tapRipple .82s cubic-bezier(.18,.8,.2,1); }
   @keyframes ditherPulse{
     0%   { opacity:.8;  transform:translate3d(-2.2%, .5%, 0) scale(1.04) skewX(-3deg); }
     30%  { opacity:1;   transform:translate3d(1.5%, -1.2%, 0) scale(1.08) skewX(2.2deg) rotate(.24deg); }
@@ -428,7 +444,7 @@
   </div>
 
   <div id="rsvp">
-    <div class="slide-label">Want to come? Let me know and I'll keep you posted.</div>
+    <div class="slide-label">Want to come? I'll keep you posted.</div>
     <!-- Netlify Forms: submissions land in the Netlify UI and fire the email notification -->
     <form id="rsvp-form" name="rsvp" method="POST" data-netlify="true" netlify-honeypot="bot-field" autocomplete="off">
       <input type="hidden" name="form-name" value="rsvp">
@@ -516,6 +532,10 @@ const DURATION = BEATS[BEATS.length - 1].end;
 const $ = s => document.querySelector(s);
 const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
 const lerp  = (a,b,t) => a + (b - a) * t;
+// #retro-dither is inset -4% of the stage and its ::before/::after another -10% of that, so the
+// gradient box spans 129.6% of the stage. Compress around the centre or the splash lands off-screen.
+const SPLASH_SPAN = 1.08 * 1.2;
+const splashPct = t => (50 + (clamp(t, 0, 1) * 100 - 50) / SPLASH_SPAN).toFixed(2) + '%';
 const params = new URLSearchParams(location.search);
 const hexToRgb01 = h => {
   const n = parseInt(h.slice(1), 16);
@@ -540,8 +560,7 @@ const state = {
   ambientTime: 0,
   beat: 0,
   tilt:  { x:0, y:0 }, tiltTarget:{ x:0, y:0 },
-  pointer:{ x:0, y:0 },
-  smear: { x:0, y:0 },
+  pointer:{ x:0, y:0 }, pointerTarget:{ x:0, y:0 },
   amp: 0,
   ampOut: 0,                     // amp after hypermode boost — feeds shader + CSS
   audioLive: false,
@@ -617,7 +636,6 @@ const plasma = (() => {
     uniform float uTime;      // seconds, pre-wrapped in JS
     uniform vec2  uTilt;
     uniform vec2  uPointer;
-    uniform vec2  uSmear;
     uniform float uAmp;
     uniform float uProgress;
     uniform vec3  uPal[3];
@@ -647,7 +665,10 @@ const plasma = (() => {
     void main(){
       vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
       uv += uTilt * 0.15;
-      uv += uSmear * 0.6;
+      // vec2 uv0 = uv;   // was the undisplaced anchor for pointerGlow — commented out with it
+      // uPointer is NDC [-1..1]; uv is normalised by height, so the pointer has to be scaled into
+      // uv units (half-extent .5 vertically, .5*aspect horizontally) or it lands off-screen.
+      vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0);
       // domain-warped fbm advected by a drifting flow → the field physically moves like
       // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
       // seamlessly (no reshuffle at the wrap) and stays small (mediump-safe).
@@ -657,7 +678,7 @@ const plasma = (() => {
 
       // Stronger screen-wave displacement: the whole field sloshes and ripples during the beat.
       float wave = sin((uv.x * 12.0 + uv.y * 7.0) * 1.9 + uTime * 3.5 + fbm(uv * 4.0) * 7.5);
-      float ripple = sin(length(uv - uPointer * 0.85) * 30.0 - uTime * 8.5 + wave * 5.0) * (0.42 + 1.1 * uAmp);
+      float ripple = sin(length(uv - pointerUv) * 30.0 - uTime * 8.5 + wave * 5.0) * (0.42 + 1.1 * uAmp);
       uv += normalize(uv + 0.0001) * ripple * 0.72;
       uv += vec2(sin(uv.y * 10.0 + uTime * 2.9), cos(uv.x * 10.0 - uTime * 2.7)) * (0.12 + 0.34 * uAmp);
 
@@ -669,9 +690,12 @@ const plasma = (() => {
       vec2 r = vec2(fbm(uv + warp + vec2(1.7, 9.2) + flow.yx * 1.7),
                     fbm(uv + warp + vec2(8.3, 2.8) - flow * 1.5 + ripple));
       float f = fbm(uv + 3.8 * r + flow * 2.6 + ripple * 2.8);
-      float d = length(uv - uPointer * 0.85);
-      float pointerGlow = exp(-d * 5.8) * (1.2 + uAmp * 2.2) * (1.1 + ripple * 1.0);
-      f += pointerGlow;                                   // stronger tap/ripple glow
+      // pointer bloom — commented out; the CSS splash in #retro-dither does this job now.
+      // To restore, uncomment these and uv0 above (keep the peak under ~.5: fbm caps at .969
+      // and palette() clamps at 1, so anything more just flat-clips).
+      // float d = length(uv0 - pointerUv);
+      // float pointerGlow = exp(-d * 5.8) * (0.30 + uAmp * 0.22) * (0.8 + ripple * 0.35);
+      // f += pointerGlow;
       f += wave * 0.25 * (0.75 + uAmp);
       float shade = smoothstep(0.04, 1.2, f + 1.1 * length(r) + ripple * 0.9);
       vec3 col = palette(f + 0.22 * uAmp + ripple * 0.22);
@@ -714,7 +738,7 @@ const plasma = (() => {
 
   const U = n => gl.getUniformLocation(prog, n);
   const u = { res:U('uRes'), time:U('uTime'), tilt:U('uTilt'), pointer:U('uPointer'),
-              smear:U('uSmear'), amp:U('uAmp'), progress:U('uProgress'), pal:U('uPal') };
+              amp:U('uAmp'), progress:U('uProgress'), pal:U('uPal') };
 
   function setPalette(stops){
     const flat = new Float32Array(stops.flatMap(hexToRgb01));
@@ -726,7 +750,6 @@ const plasma = (() => {
     gl.uniform1f(u.time, state.ambientTime % 60.0);
     gl.uniform2f(u.tilt, state.tilt.x, state.tilt.y);
     gl.uniform2f(u.pointer, state.pointer.x, state.pointer.y);
-    gl.uniform2f(u.smear, state.smear.x, state.smear.y);
     gl.uniform1f(u.amp, state.ampOut);
     gl.uniform1f(u.progress, state.started ? state.sceneTime / DURATION : 0.15);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -905,14 +928,25 @@ function initInput(){
     const r = stage.getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width * 2 - 1, y: -((e.clientY - r.top) / r.height * 2 - 1) };
   };
-  stage.addEventListener('pointerdown', e => { down = { ...pos(e), t: performance.now(), moved: 0 }; });
+  const dither = $('#retro-dither');
+  let seen = false;                    // the first pointer event snaps; later ones glide in via the lerp
+  // dragging does exactly what hovering does: the field reacts under the pointer, it doesn't slide
+  const track = p => {
+    state.pointerTarget.x = p.x; state.pointerTarget.y = p.y;
+    if (!seen){ seen = true; state.pointer.x = p.x; state.pointer.y = p.y; }
+    if (state.started) dither.classList.add('trail');
+  };
+  stage.addEventListener('pointerdown', e => {
+    const p = pos(e);
+    down = { ...p, t: performance.now(), moved: 0 };
+    track(p);
+  });
   stage.addEventListener('pointermove', e => {
     const p = pos(e);
-    state.pointer.x = p.x; state.pointer.y = p.y;
+    track(p);
     if (down){
       const dx = p.x - down.x, dy = p.y - down.y;
-      down.moved += Math.abs(dx) + Math.abs(dy);
-      state.smear.x += dx * 0.5; state.smear.y += dy * 0.5;
+      down.moved += Math.abs(dx) + Math.abs(dy);   // tap-vs-drag detection only
     }
   });
   stage.addEventListener('pointerup', e => {
@@ -922,15 +956,13 @@ function initInput(){
     const x = p.x;                 // [-1..1]; left half = back, right half = next
     down = null;
     if (!tap) return;
-    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
     if (!state.started) return;
 
-    const dither = $('#retro-dither');
+    // splash on every tap, UI included — the whitelist below only blocks slide navigation
     if (dither){
-      const rx = ((x + 1) / 2) * 100;
-      const ry = ((-p.y + 1) / 2) * 100;
-      dither.style.setProperty('--tap-x', `${clamp(rx, 0, 100)}%`);
-      dither.style.setProperty('--tap-y', `${clamp(ry, 0, 100)}%`);
+      const rs = document.documentElement.style;
+      rs.setProperty('--burst-x', splashPct((x + 1) / 2));
+      rs.setProperty('--burst-y', splashPct((-p.y + 1) / 2));
       dither.classList.remove('tap');
       void dither.offsetWidth;
       dither.classList.add('tap');
@@ -938,6 +970,7 @@ function initInput(){
       dither._tapTimer = setTimeout(() => dither.classList.remove('tap'), 820);
     }
 
+    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
     if (x < 0) back(); else advance();
   });
 }
@@ -1046,7 +1079,7 @@ function initUI(){
   const vol = $('#vol-hint');
   vol.addEventListener('click', () => vol.classList.add('hide'), { once:true });
 
-  // HYPE slider → live audio hardness. stopPropagation so dragging the thumb doesn't smear the shader.
+  // HYPE slider → live audio hardness. stopPropagation so dragging the thumb can't trigger tap-to-advance.
   const hype = $('#hype-slider');
   hype.addEventListener('input', () => audio.setHardness(hype.value / 100));
   ['pointerdown','pointermove','pointerup'].forEach(ev =>
@@ -1128,10 +1161,11 @@ function frame(now){
     else if (state.ampOut < 0.35) state.beatHi = false;
   }
 
-  // smooth tilt, decay smear
+  // smooth tilt + pointer (the pointer chases faster than tilt — it has to stay under the cursor)
   state.tilt.x = lerp(state.tilt.x, state.tiltTarget.x, 0.08);
   state.tilt.y = lerp(state.tilt.y, state.tiltTarget.y, 0.08);
-  state.smear.x *= 0.90; state.smear.y *= 0.90;
+  state.pointer.x = lerp(state.pointer.x, state.pointerTarget.x, 0.22);
+  state.pointer.y = lerp(state.pointer.y, state.pointerTarget.y, 0.22);
 
   // expose live inputs to CSS: tilt-reactive headings + music-pumped UI
   const rs = document.documentElement.style;
@@ -1139,6 +1173,9 @@ function frame(now){
   rs.setProperty('--ty', state.tilt.y.toFixed(3));
   rs.setProperty('--amp', state.ampOut.toFixed(3));
   rs.setProperty('--hue', state.hue + 'deg');
+  // the splash rides the smoothed pointer — the same lerp the shader ripple uses
+  rs.setProperty('--tap-x', splashPct((state.pointer.x + 1) / 2));
+  rs.setProperty('--tap-y', splashPct((1 - state.pointer.y) / 2));
 
   if (plasma) plasma.draw();
   overlay.update();
