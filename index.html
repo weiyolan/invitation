@@ -91,7 +91,11 @@
     position:absolute; inset:-4%; z-index:1; pointer-events:none;
     background:
       radial-gradient(circle at 50% 45%, rgba(255,255,255,.22), transparent 28%),
-      linear-gradient(180deg, rgba(20,14,28,.14), rgba(8,10,16,.22) 20%, rgba(0,0,0,.72) 100%),
+      linear-gradient(180deg, rgba(20,14,28,.14), rgba(8,10,16,.22) 20%, rgba(0,0,0,.72) 100%);
+      /* dither crosshatch — the 1px teal/purple mesh. Commented out: it competes with the tap
+         shockwave for attention. To restore, put these two layers back on the end of the
+         background list above, add two more `100% 100%` to background-size, and re-enable both
+         ditherShift blocks below.
       repeating-linear-gradient(
         to bottom,
         rgba(255,255,255,.2) 0 1px,
@@ -106,12 +110,14 @@
         rgba(127,233,214,.14) 2px 3px,
         rgba(0,0,0,.18) 3px 4px
       );
-    background-size:100% 100%, 100% 100%, 100% 100%, 100% 100%;
+      */
+    background-size:100% 100%, 100% 100%;
     mix-blend-mode: overlay;
     opacity:1;
     filter:contrast(2.8) brightness(.72) saturate(2.2) blur(.18px);
-    animation:ditherPulse 3.6s ease-in-out infinite alternate,
-              ditherShift 0.56s steps(2) infinite alternate;
+    /* ditherShift dropped with the crosshatch: it only moved background-position on those two
+       layers, so it would now run 0.56s steps(2) forever for no visible effect. */
+    animation:ditherPulse 3.6s ease-in-out infinite alternate;
     box-shadow: inset 0 0 28px rgba(127,233,214,.24), inset 0 0 56px rgba(107,74,156,.18);
   }
   /* pointer splash: ::before follows hover + drag, ::after bursts on tap. Both sit inside
@@ -146,13 +152,15 @@
     65%  { opacity:1;   transform:translate3d(-1.1%, 1.6%, 0) scale(1.13) skewX(-1.8deg) rotate(-.22deg); }
     100% { opacity:.9;  transform:translate3d(2.3%, -1.5%, 0) scale(1.18) skewX(3deg); }
   }
+  /* jittered the crosshatch layers; unreferenced since they were commented out above.
   @keyframes ditherShift{
     0%   { background-position:0 0, 0 0, 0 0, 0 0; }
     50%  { background-position:0 0, 0 0, 0 4px, 7px 0; }
     100% { background-position:0 0, 0 0, 0 -4px, -7px 0; }
   }
+  */
   /* the skew is the horizontal chroma smear a tube makes when the coils fire — steps() above
-     keeps it chunky so it reads as the same hardware as ditherShift, not as a CSS ease. */
+     keeps it chunky so it reads as CRT hardware rather than a CSS ease. */
   @keyframes degauss{
     0%   { opacity:0;   transform:scale(.55) skewX(0deg)  scaleY(1); }
     6%   { opacity:1;   transform:scale(.72) skewX(-7deg) scaleY(1.06); }
@@ -672,11 +680,11 @@ const WAVE = {
                      // vectors GLES2 actually guarantees — it already spends ~9 on res/time/
                      // tilt/pointer/amp/progress/pal[3].
   amplitude: 0.5,    // wave height
-  basePx: 340,       // crest travel in CSS px/s at speed 1
-  speed: 0.65,
-  wavelength: 80,    // CSS px between crests
-  rings: 2,          // crests per train
-  decay: 1,          // energy loss — higher dies faster
+  basePx: 400,       // crest travel in CSS px/s at speed 1
+  speed: 1.5,        // 680 px/s — the front clears a 405x720 stage in ~0.6s (measured)
+  wavelength: 100,    // CSS px between crests
+  rings: 1,          // crests per train. 1 = a single hard front, i.e. a shockwave, not ringing water
+  decay: 2.5,        // energy loss — higher dies faster. Raise toward 2 if the wake reads as mushy
   warp: 0.18,        // how far the plasma domain shifts, in height units. Tune to taste.
   refraction: 100,   // how far the captured DOM bends, in CSS px
   dispersion: 0.5,   // chromatic split along the wave slopes
@@ -873,10 +881,12 @@ ${WAVE_GLSL}
       float wgl = dot(wg, vec2(-0.55, -0.8));
       col += pow(clamp(wgl * 2.2, 0.0, 1.0), 2.0) * uWaveB.z;
       col *= 1.0 - pow(clamp(-wgl * 1.6, 0.0, 1.0), 2.0) * uWaveB.z * 0.3;
-      // film grain (animated) — keep the retro stock feel but let the warp dominate.
-      float luma = dot(col, vec3(0.299, 0.587, 0.114));
-      float grain = hash(gl_FragCoord.xy * 1.7 + fract(uTime * 0.37) * 311.0) - 0.5;
-      col += grain * 0.10 * (0.25 + 0.75 * (1.0 - abs(luma - 0.4) * 2.0));
+      // Animated film grain, commented out alongside the retro-dither crosshatch — both were
+      // fighting the shockwave for attention. luma and grain were used nowhere else, so the whole
+      // block lifts out cleanly; hash() is still needed by noise(). Uncomment to restore.
+      // float luma = dot(col, vec3(0.299, 0.587, 0.114));
+      // float grain = hash(gl_FragCoord.xy * 1.7 + fract(uTime * 0.37) * 311.0) - 0.5;
+      // col += grain * 0.10 * (0.25 + 0.75 * (1.0 - abs(luma - 0.4) * 2.0));
       gl_FragColor = vec4(col, 1.0);
     }`;
 
@@ -1026,16 +1036,23 @@ ${WAVE_GLSL}
 
   let dpr = 1, fresh = false, ready = false, active = false;
 
+  let captureWarned = false;
+
   src.onpaint = () => {
     try {
+      // Identity transform, deliberately. drawElementImage rasterises at the canvas backing-store
+      // scale, NOT in the 2D context's transform space — so the bitmap stays dpr-sized (set in
+      // resize) and nothing is scaled here. Applying ctx.scale(dpr, dpr) draws the page at 2x on a
+      // retina device and clips it to the top-left quadrant, which then gets magnified back across
+      // the stage: the bug that made the text look like it vanished on tap. Verified on the deploy.
       ctx.reset();
-      // drawElementImage draws in the context's transform space — the transform it returns is
-      // meant for element.style.transform — so a dpr-sized bitmap needs the scale applied, or
-      // the capture lands in the top-left corner at 1/dpr size.
-      ctx.scale(dpr, dpr);
       ctx.drawElementImage(content, 0, 0);
       fresh = true;
-    } catch { /* capture can throw mid-teardown; the next frame just retries */ }
+    } catch (err) {
+      // latched: this runs inside the frame loop, so an unlatched log would spam thousands of lines.
+      // Swallowing it entirely made a throwing capture indistinguishable from a mis-scaled one.
+      if (!captureWarned){ captureWarned = true; console.warn('drawElementImage failed:', err); }
+    }
   };
 
   function resize(wCss, hCss, ratio){
