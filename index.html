@@ -484,6 +484,25 @@
   #debug input[type=range]{ flex:1; accent-color:#b87a34; }
   #dbg-dom{ white-space:nowrap; opacity:.8; }
 
+  /* ?perf HUD. Literal hex and never var(--spark-*): a readout that consumed the accent tokens
+     would become another consumer of the thing it is measuring. `contain` keeps its own repaints
+     out of everyone else's invalidation. */
+  #perf{ position:absolute; left:0; top:0; z-index:20; display:none; max-width:100%;
+    padding:.45em .55em; background:#000c; color:#7fe9d6;
+    font:11px/1.35 var(--mono); white-space:pre; pointer-events:none;
+    contain:layout style paint; }
+  #perf.on{ display:block; }
+  #perf pre{ font:inherit; margin:0; }
+  #perf-tog{ display:flex; flex-wrap:wrap; gap:.25em; margin-top:.4em; pointer-events:auto; }
+  #perf-tog button{ font:inherit; color:#e7efee; background:#ffffff26; border:1px solid #ffffff44;
+    border-radius:3px; padding:.15em .45em; }
+  #perf-tog button[aria-pressed="true"]{ background:#7fe9d6; color:#04100e; }
+  /* Ablation switches. !important because #retro-dither.trail::before out-specifies a body class. */
+  .perf-no-dither #retro-dither{ display:none !important; }
+  .perf-no-filter #retro-dither{ filter:none !important; }
+  .perf-no-trail  #retro-dither::before{ opacity:0 !important; }
+  .perf-no-wc     .beat.active{ will-change:auto !important; }
+
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
     .no-webgl #fallback{ animation:none; }
@@ -632,6 +651,12 @@
   </div><!-- /#dom-content -->
 
   <canvas id="dom-out" aria-hidden="true"></canvas>
+
+  <!-- ?perf readout. Deliberately OUTSIDE #dom-content: everything in there is only visible via the
+       captured 2D bitmap once domWave arms, which is refreshed on demand, so a HUD in there would
+       sit frozen. As a direct child of #stage at z20 it is above #dom-out and never part of a
+       capture. -->
+  <div id="perf" aria-hidden="true"><pre id="perf-out"></pre><div id="perf-tog"></div></div>
 </main>
 
 <script>
@@ -1837,6 +1862,9 @@ function initInput(){
     down = null;
     if (!tap) return;
     if (!state.started) return;
+    // Tapping a ?perf toggle must spawn neither a wave nor a burst — splash() below runs before the
+    // navigation whitelist, so without this the HUD would perturb exactly what it is measuring.
+    if (e.target.closest('#perf')) return;
 
     // splash on every tap, UI included — the whitelist below only blocks slide navigation
     // the travelling wave: p is already NDC, which is the space the wave field works in
@@ -1854,7 +1882,7 @@ function initInput(){
       dither._tapTimer = setTimeout(() => dither.classList.remove(cur), 560);   // matches @keyframes degauss
     }
 
-    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
+    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug, #perf')) return;
     if (x < 0) back(); else advance();
   });
 }
@@ -2030,6 +2058,103 @@ window.__seek = i => {
 /* =======================================================================
    Resize + main loop
    ======================================================================= */
+/* =======================================================================
+   ?perf — frame-time HUD with ablation toggles.
+
+   gl.drawArrays is asynchronous and EXT_disjoint_timer_query is unavailable on mobile, so no JS
+   timer can see the plasma's GPU cost. The only honest attribution on a phone is ABLATION: switch a
+   layer off, read the frame time, and the delta is what that layer costs. Hence the toggle board
+   rather than just a readout.
+
+   Everything but tick() sits behind `on`, so a normal visitor pays a handful of booleans a frame.
+   ======================================================================= */
+const perf = (() => {
+  const on = params.has('perf');
+  const N = 240;                                   // ~4 s at 60 fps
+  const ring = new Float32Array(N);
+  const scratch = [];
+  let n = 0, w = 0, last = 0, jank = 0, jankAt = 0, jankSec = 0, hudAt = 0;
+  const t = { js:0, draw:0, dom:0, css:0, ovl:0 };
+  const off = { plasma:false, dither:false, filter:false, trail:false, cssvars:false,
+                domwave:false, wc:false };
+
+  function tick(now){
+    if (last){
+      const dt = now - last;
+      if (dt > 0 && dt < 1000){                    // a tab-switch gap is not a slow frame
+        ring[w] = dt; w = (w + 1) % N; if (n < N) n++;
+        if (dt > 33) jank++;
+      }
+    }
+    last = now;
+    if (now - jankAt > 1000){ jankSec = jank; jank = 0; jankAt = now; }
+  }
+  function pct(q){
+    if (!n) return 0;
+    scratch.length = 0;
+    for (let i = 0; i < n; i++) scratch.push(ring[i]);
+    scratch.sort((a, b) => a - b);
+    return scratch[clamp(Math.round(q * (n - 1)), 0, n - 1)];
+  }
+  // The panel's own frame period, measured rather than assumed: ~8.3 at 120Hz, ~16.7 at 60Hz. The
+  // fastest 5% of frames is the best available estimate of "as fast as this display goes", which is
+  // what stops `frame 16.7` reading as bad news on a 60Hz phone.
+  const period = () => clamp(pct(0.05), 6.5, 17.5);
+  const reset = () => { n = 0; w = 0; last = 0; for (const k in t) t[k] = 0; };
+  // Exponential mean, not last-frame: these are sub-millisecond and a single sample is all noise.
+  const mark = (k, ms) => { t[k] = t[k] ? t[k] * 0.9 + ms * 0.1 : ms; };
+
+  let out = null;
+  if (on){
+    $('#perf').classList.add('on');
+    out = $('#perf-out');
+    // key, flag, body class (null = JS-side only), label
+    const TOG = [
+      ['P','plasma',  null,      'plasma.draw()'],
+      ['R','dither',  'dither',  '#retro-dither'],
+      ['F','filter',  'filter',  'its filter chain'],
+      ['T','trail',   'trail',   'the ::before follower'],
+      ['C','cssvars', null,      'the custom-property block'],
+      ['W','domwave', null,      'domWave.step()'],
+      ['B','wc',      'wc',      'will-change on .beat'],
+    ];
+    const bar = $('#perf-tog');
+    for (const [key, flag, cls, label] of TOG){
+      const b = document.createElement('button');
+      b.textContent = key; b.title = 'ablate ' + label;
+      b.setAttribute('aria-pressed', 'false');
+      b.onclick = () => {
+        off[flag] = !off[flag];
+        b.setAttribute('aria-pressed', String(off[flag]));
+        if (cls) document.body.classList.toggle('perf-no-' + cls, off[flag]);
+        reset();                                   // old frame times describe the old configuration
+      };
+      bar.appendChild(b);
+    }
+  }
+
+  function hud(now){
+    if (now - hudAt < 250) return;                 // one textContent write per 250ms, inside contain
+    hudAt = now;
+    const per = period(), p50 = pct(0.5), p95 = pct(0.95);
+    let miss = 0;
+    for (let i = 0; i < n; i++) if (ring[i] > per * 1.35) miss++;
+    const c = plasma && $('#plasma');
+    // js vs frame IS the attribution: a small js half against a long frame means the time is going
+    // to the GPU and the compositor, which nothing measurable from here can see.
+    const bound = t.js > p50 * 0.6 ? 'js ' : 'gpu';
+    out.textContent =
+      `fps ${(1000 / (p50 || 16.7)).toFixed(0)}/${(1000 / per).toFixed(0)}hz  frame ${p50.toFixed(1)}` +
+      `  p95 ${p95.toFixed(1)}  miss ${(n ? miss / n * 100 : 0).toFixed(0)}%\n` +
+      `js ${t.js.toFixed(1)}ms  draw ${t.draw.toFixed(1)}  dom ${t.dom.toFixed(1)}` +
+      `  css ${t.css.toFixed(2)}  ovl ${t.ovl.toFixed(2)}  bound:${bound}\n` +
+      `tier ${TIER}  plasma ${c ? c.width + 'x' + c.height : 'none'}` +
+      `  waves ${waves.count}/${Q.maxLive}  dom:${window.__domWaveState().mode}  jank/s ${jankSec}`;
+  }
+
+  return { on, off, tick, reset, mark, hud };
+})();
+
 let lastW = -1, lastH = -1, lastDpr = -1;
 function resize(){
   const stage = $('#stage');
@@ -2056,6 +2181,8 @@ function resize(){
 let lastFrame = 0, lastPalHue = -1, frameNo = 0;
 function frame(now){
   frameNo++;                       // invalidates initInput's cached stage rect
+  perf.tick(now);                  // first, so nothing below can skip the ring buffer
+  const tJs = perf.on ? performance.now() : 0;
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
 
@@ -2120,26 +2247,32 @@ function frame(now){
   // unconditional document-wide style invalidations per frame. Both lerps below are geometric, so
   // with the gate they stop writing entirely ~0.5s after the pointer or the phone stops moving;
   // before, they wrote forever.
-  const frozen = state.paused || reducedMotion;
-  const qAmp  = frozen ? 0 : 0.02;    // 50 levels; worst consumer is 16px of shadow blur -> 0.32px
-  const qTilt = frozen ? 0 : 0.005;   // worst consumer is translate(var(--tx) * 10px) -> 0.05px
-  css('--tx', qf(state.tilt.x, qTilt, 3));
-  css('--ty', qf(state.tilt.y, qTilt, 3));
-  css('--amp', qf(state.ampOut, qAmp, 3));
-  // Gated, not quantised: the value is constant except during the tween, so the gate alone takes
-  // it from 60 writes/s to ~5 per 1.74s and the frozen path stays byte-identical. The outer if() is
-  // also what stops fitChroma — an 18-step bisection — running 60x/s for a number that only moves
-  // with the hue. Chroma travels with the hue because sRGB can't hold the accent's full chroma all
-  // the way round, and letting the browser clip instead is what would make luminance drift.
-  const hue = state.accentHue.toFixed(2);
-  if (cssLast['--spark-h'] !== hue){
-    css('--spark-h', hue);
-    css('--spark-lc',
-      ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
+  const tCss = perf.on ? performance.now() : 0;
+  // Ablatable as one block by the ?perf [C] toggle: this is the main-thread half of the cost,
+  // and separating it from the GPU half is the whole point of the HUD.
+  if (!perf.off.cssvars){
+    const frozen = state.paused || reducedMotion;
+    const qAmp  = frozen ? 0 : 0.02;    // 50 levels; worst consumer is 16px of shadow blur -> 0.32px
+    const qTilt = frozen ? 0 : 0.005;   // worst consumer is translate(var(--tx) * 10px) -> 0.05px
+    css('--tx', qf(state.tilt.x, qTilt, 3));
+    css('--ty', qf(state.tilt.y, qTilt, 3));
+    css('--amp', qf(state.ampOut, qAmp, 3));
+    // Gated, not quantised: the value is constant except during the tween, so the gate alone takes
+    // it from 60 writes/s to ~5 per 1.74s and the frozen path stays byte-identical. The outer if() is
+    // also what stops fitChroma — an 18-step bisection — running 60x/s for a number that only moves
+    // with the hue. Chroma travels with the hue because sRGB can't hold the accent's full chroma all
+    // the way round, and letting the browser clip instead is what would make luminance drift.
+    const hue = state.accentHue.toFixed(2);
+    if (cssLast['--spark-h'] !== hue){
+      css('--spark-h', hue);
+      css('--spark-lc',
+        ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
+    }
+    // the splash rides the smoothed pointer — the same lerp the shader ripple uses
+    css('--tap-x', splashPct((state.pointer.x + 1) / 2));   // splashPct already rounds to 2dp
+    css('--tap-y', splashPct((1 - state.pointer.y) / 2));
   }
-  // the splash rides the smoothed pointer — the same lerp the shader ripple uses
-  css('--tap-x', splashPct((state.pointer.x + 1) / 2));   // splashPct already rounds to 2dp
-  css('--tap-y', splashPct((1 - state.pointer.y) / 2));
+  if (perf.on) perf.mark('css', performance.now() - tCss);
 
   // one uniform upload per actual change, not per frame
   if (plasma && Math.abs(state.accentHue - lastPalHue) > 0.01){
@@ -2147,9 +2280,21 @@ function frame(now){
     lastPalHue = state.accentHue;
   }
 
-  if (plasma) plasma.draw();
-  if (domWave) domWave.step();
+  const tDraw = perf.on ? performance.now() : 0;
+  if (plasma && !perf.off.plasma) plasma.draw();
+  if (perf.on) perf.mark('draw', performance.now() - tDraw);
+
+  const tDom = perf.on ? performance.now() : 0;
+  if (domWave && !perf.off.domwave) domWave.step();
+  if (perf.on) perf.mark('dom', performance.now() - tDom);
+
+  const tOvl = perf.on ? performance.now() : 0;
   overlay.update();
+  if (perf.on){
+    perf.mark('ovl', performance.now() - tOvl);
+    perf.mark('js', performance.now() - tJs);
+    perf.hud(now);
+  }
   requestAnimationFrame(frame);
 }
 
