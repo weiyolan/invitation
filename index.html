@@ -138,7 +138,14 @@
     background-size:100% 100%, 100% 100%;
     mix-blend-mode: overlay;
     opacity:1;
-    filter:contrast(2.8) brightness(.72) saturate(2.2) blur(.18px);
+    /* Was: contrast(2.8) brightness(.72) saturate(2.2) blur(.18px).
+       A .18px Gaussian is sub-pixel — invisible at phone viewing distance — but it is what forced
+       the whole chain to re-run every frame: a blur is defined in DEVICE space, so ditherPulse's
+       scale(1.04 -> 1.18) changed its effective radius on every keyframe step. The remaining three
+       are per-pixel and scale-invariant, so the filtered result can be cached and merely
+       re-composited and re-blended as the animation runs. Dropping it also deletes a two-pass
+       separable convolution over ~1.6x the stage area. */
+    filter:contrast(2.8) brightness(.72) saturate(2.2);
     /* ditherShift dropped with the crosshatch: it only moved background-position on those two
        layers, so it would now run 0.56s steps(2) forever for no visible effect. */
     animation:ditherPulse 3.6s ease-in-out infinite alternate;
@@ -155,12 +162,23 @@
   }
   /* the follower runs far dimmer than the burst — the parent's contrast(2.8) saturate(2.2) amplifies it hard */
   #retro-dither::before{
-    /* the beat pumps the radius, not the opacity: --amp changes every frame and would restart
-       the fade-in transition 60x/sec. Radius scales about the gradient centre, so the blob
-       stays under the pointer (scaling the element itself would drag it off-centre). */
-    background: radial-gradient(circle calc(30cqmin + var(--amp) * 9cqmin) at var(--tap-x) var(--tap-y),
+    /* The beat pump and the pointer follow are both TRANSFORMS now, not background geometry. They
+       used to be a calc() radius and a calc() centre, so every frame changed the gradient's
+       geometry — which re-rasterised a full-screen gradient, re-ran the parent's filter chain over
+       it and re-blended the result against the plasma. And because .trail was never removed, that
+       ran from the first touch to the end of the session: tapping once made the whole app
+       permanently slower, which is exactly what read as "the ripple is expensive".
+       The substitution is exact. transform-origin is the gradient's own centre and it is a fixed
+       point of the scale, so scale(1 + --amp*.3) on a 30cqmin circle is identically the old
+       30cqmin + --amp*9cqmin, stops and all (34%/70% are relative to the ending shape). translate()
+       percentages resolve against this element's own border box — the same box splashPct() already
+       compresses --tap-x/--tap-y into. Only opacity is transitioned: the pump must stay instant. */
+    background: radial-gradient(circle 30cqmin at 50% 50%,
       oklch(var(--spark-lc) var(--spark-h) / .20),
       oklch(69.36% 0.1757 calc(var(--spark-h) + 110.87) / .12) 34%, transparent 70%);
+    transform-origin:50% 50%;
+    transform:translate(calc(var(--tap-x) - 50%), calc(var(--tap-y) - 50%))
+              scale(calc(1 + var(--amp) * 0.3));
     transition:opacity .45s ease;
   }
   #retro-dither.trail::before{ opacity:.72; }
@@ -947,6 +965,8 @@ const WAVE = {
   decay: 2.5,        // energy loss — higher dies faster. Raise toward 2 if the wake reads as mushy
   warp: 0.18,        // how far the plasma domain shifts, in height units. Tune to taste.
   refraction: 100,   // how far the captured DOM bends, in CSS px
+  trailIdle: 1600,   // ms of pointer silence before the follower blob fades out. Drop the timeout
+                     // in track() if you want the old sticky-forever behaviour back.
   dispersion: 0.5,   // chromatic split along the wave slopes
   shine: 0.5,        // glint on the crests
 };
@@ -1786,7 +1806,15 @@ function initInput(){
   const track = p => {
     state.pointerTarget.x = p.x; state.pointerTarget.y = p.y;
     if (!seen){ seen = true; state.pointer.x = p.x; state.pointer.y = p.y; }
-    if (state.started) dither.classList.add('trail');
+    if (state.started){
+      dither.classList.add('trail');
+      // .trail used to be add-only, so a "follower" that is documented as following hover and drag
+      // instead sat under the last touch point for the rest of the session — on a phone there is no
+      // hover to move it on. That left a full-screen screen-blended gradient live and repainting
+      // from the first touch onward. The .45s opacity transition carries the fade-out.
+      clearTimeout(dither._trailTimer);
+      dither._trailTimer = setTimeout(() => dither.classList.remove('trail'), WAVE.trailIdle);
+    }
   };
   stage.addEventListener('pointerdown', e => {
     const p = pos(e);
