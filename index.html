@@ -464,9 +464,30 @@
     #hype.broken{ animation:none; }
     .arrow-down{ animation:none; }
     .arrow-down .shaft{ animation:none; stroke-dasharray:none; }
+    /* Full-screen, overlay-blended, filtered, and animating opacity + transform forever: the
+       single largest piece of motion on the page, and the only one that was not honouring this
+       query. */
+    #retro-dither{ animation:none; }
     /* No rule needed for the per-beat colour change any more: frame() gates the accent rotation
        (and the beat-warped plasma clock) on !reducedMotion, so neither ever starts. */
   }
+
+  /* ?debug and __seek hold every clock still so the frame is a pure function of the seek position.
+     ditherPulse is a wall-clock CSS animation, though, so it kept running underneath and the
+     committed poster.jpg captured it at whatever phase CI happened to reach: three consecutive
+     verify.mjs runs on an unmodified tree wrote 142608 / 136028 / 128467-byte posters, i.e. the
+     hero frame was substantially different every time. animation:none and not
+     animation-play-state:paused, so it snaps to the base style (opacity:1, no transform) rather
+     than freezing wherever it happened to get to. */
+  body.frozen #retro-dither{ animation:none; }
+  /* Two fade-ins also stand between __seek and a settled frame: #overlay's opacity (.9s after a
+     .25s delay) and each .beat's opacity/transform/filter (.9-1.1s). verify.mjs screenshots 180ms
+     after .active lands — inside #overlay's delay — which is why the committed poster.jpg was pure
+     plasma with no title on it, and why run-to-run drift survived freezing ditherPulse: the
+     capture landed at whatever phase of two transitions CI happened to reach. A held clock has
+     nothing to animate towards, so snap to the arrived state. */
+  body.frozen #overlay,
+  body.frozen .beat{ transition:none; }
 </style>
 </head>
 <body>
@@ -1852,6 +1873,7 @@ function initDebug(){
   const bar = $('#debug'); bar.classList.add('on');
   const slider = $('#dbg-slider');
   state.started = true; state.paused = true;
+  document.body.classList.add('frozen');   // see body.frozen in <style>
   const seekTo = t => { state.held.scene = clamp(t, 0, DURATION - 0.001); };
   slider.oninput = () => seekTo(slider.value / 1000 * DURATION);
   $('#dbg-prev').onclick = () => { const i = Math.max(0, state.beat - 1); seekTo(BEATS[i].start + 0.001); };
@@ -1861,6 +1883,7 @@ function initDebug(){
 // Verify/export hook: land on a beat and hold (deterministic, no audio needed).
 window.__seek = i => {
   state.started = true; state.paused = true;
+  document.body.classList.add('frozen');   // see body.frozen in <style>
   state.held.scene = clamp(BEATS[clamp(i,0,BEATS.length-1)].start + 0.001, 0, DURATION - 0.001);
   state.held.ambient = i * 3.7;
 };
