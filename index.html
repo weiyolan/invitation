@@ -685,6 +685,24 @@ const lerp  = (a,b,t) => a + (b - a) * t;
 const SPLASH_SPAN = 1.08 * 1.2;
 const splashPct = t => (50 + (clamp(t, 0, 1) * 100 - 50) / SPLASH_SPAN).toFixed(2) + '%';
 const params = new URLSearchParams(location.search);
+const DEBUG = params.has('debug');   // hoisted: URLSearchParams.has is a linear scan, and this
+                                     // used to run once per frame from overlay.update()
+/* One custom-property write on :root is a document-wide style invalidation. --spark-h alone is read
+   by ~30 oklch() tokens including --stage-bg, every text-shadow and two full-screen inset
+   box-shadows, and it only actually moves during the 0.09s accent tween — about 5 frames in every
+   105. So write only when the FORMATTED string differs from what we last set. */
+const rootStyle = document.documentElement.style;
+const cssLast = Object.create(null);
+function css(name, value){
+  if (cssLast[name] === value) return;
+  cssLast[name] = value;
+  rootStyle.setProperty(name, value);
+}
+/* Quantise-then-format: the string is the comparison key, so the step has to live in the formatter.
+   step === 0 means full precision, and that is what the FROZEN clock gets — ?debug / __seek /
+   reduced-motion must stay byte-identical run to run because poster.jpg is regenerated through
+   them, and a rounded --amp would move the RSVP glow by a fraction of a pixel. */
+const qf = (v, step, dp) => (step ? Math.round(v / step) * step : v).toFixed(dp);
 /* --- OKLCH -> sRGB, so one accent hue can drive the whole palette (see CONFIG.palette) ---------
    Oklab is perceptually uniform, which is the entire point: rotate hue at fixed L and the real
    luminance — and so the contrast against the near-black stage — stays put. */
@@ -1512,7 +1530,7 @@ const overlay = (() => {
     dotsWrap.classList.toggle('show', live);
     // the RSVP form (save-the-date + name) owns the bottom slot for the whole show
     rsvp.classList.toggle('show', live);
-    if (params.has('debug')){
+    if (DEBUG){
       $('#dbg-beat').textContent = BEATS[i].id;
       // the capture path can only be exercised on the deploy, so surface what it actually did
       const d = window.__domWaveState();
@@ -1705,9 +1723,8 @@ function initInput(){
     // the travelling wave: p is already NDC, which is the space the wave field works in
     waves.splash(p.x, p.y, 1);
     if (dither){
-      const rs = document.documentElement.style;
-      rs.setProperty('--burst-x', splashPct((x + 1) / 2));
-      rs.setProperty('--burst-y', splashPct((-p.y + 1) / 2));
+      css('--burst-x', splashPct((x + 1) / 2));
+      css('--burst-y', splashPct((-p.y + 1) / 2));
       dither.classList.remove('tap');
       void dither.offsetWidth;
       dither.classList.add('tap');
@@ -1869,7 +1886,7 @@ function initGate(){
    Debug scrubber (?debug) — also the verify/record seam
    ======================================================================= */
 function initDebug(){
-  if (!params.has('debug')) return;
+  if (!DEBUG) return;
   const bar = $('#debug'); bar.classList.add('on');
   const slider = $('#dbg-slider');
   state.started = true; state.paused = true;
@@ -1962,19 +1979,31 @@ function frame(now){
   state.pointer.x = lerp(state.pointer.x, state.pointerTarget.x, 0.22);
   state.pointer.y = lerp(state.pointer.y, state.pointerTarget.y, 0.22);
 
-  // expose live inputs to CSS: tilt-reactive headings + music-pumped UI
-  const rs = document.documentElement.style;
-  rs.setProperty('--tx', state.tilt.x.toFixed(3));
-  rs.setProperty('--ty', state.tilt.y.toFixed(3));
-  rs.setProperty('--amp', state.ampOut.toFixed(3));
-  rs.setProperty('--spark-h', state.accentHue.toFixed(2));
-  // Chroma travels with the hue: sRGB can't hold the accent's full chroma all the way round, and
-  // letting the browser clip instead is exactly what would make luminance — and contrast — drift.
-  rs.setProperty('--spark-lc',
-    ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
+  // Expose live inputs to CSS: tilt-reactive headings + music-pumped UI. Every write here goes
+  // through css(), which drops it when the formatted string has not changed — these were eight
+  // unconditional document-wide style invalidations per frame. Both lerps below are geometric, so
+  // with the gate they stop writing entirely ~0.5s after the pointer or the phone stops moving;
+  // before, they wrote forever.
+  const frozen = state.paused || reducedMotion;
+  const qAmp  = frozen ? 0 : 0.02;    // 50 levels; worst consumer is 16px of shadow blur -> 0.32px
+  const qTilt = frozen ? 0 : 0.005;   // worst consumer is translate(var(--tx) * 10px) -> 0.05px
+  css('--tx', qf(state.tilt.x, qTilt, 3));
+  css('--ty', qf(state.tilt.y, qTilt, 3));
+  css('--amp', qf(state.ampOut, qAmp, 3));
+  // Gated, not quantised: the value is constant except during the tween, so the gate alone takes
+  // it from 60 writes/s to ~5 per 1.74s and the frozen path stays byte-identical. The outer if() is
+  // also what stops fitChroma — an 18-step bisection — running 60x/s for a number that only moves
+  // with the hue. Chroma travels with the hue because sRGB can't hold the accent's full chroma all
+  // the way round, and letting the browser clip instead is what would make luminance drift.
+  const hue = state.accentHue.toFixed(2);
+  if (cssLast['--spark-h'] !== hue){
+    css('--spark-h', hue);
+    css('--spark-lc',
+      ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
+  }
   // the splash rides the smoothed pointer — the same lerp the shader ripple uses
-  rs.setProperty('--tap-x', splashPct((state.pointer.x + 1) / 2));
-  rs.setProperty('--tap-y', splashPct((1 - state.pointer.y) / 2));
+  css('--tap-x', splashPct((state.pointer.x + 1) / 2));   // splashPct already rounds to 2dp
+  css('--tap-y', splashPct((1 - state.pointer.y) / 2));
 
   // one uniform upload per actual change, not per frame
   if (plasma && Math.abs(state.accentHue - lastPalHue) > 0.01){
