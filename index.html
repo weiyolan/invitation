@@ -934,10 +934,21 @@ const waves = (() => {
     live.push({ x, y, age:0, amp });
   }
   function step(dt){
-    const reach = Math.hypot(aspect, 1) + A[2] * 3;   // cleared the stage diagonal + the envelope
     for (let i = live.length - 1; i >= 0; i--){
       const w = live[i];
       w.age += dt;
+      // reach used to be Math.hypot(aspect, 1) — the whole stage diagonal — for EVERY wave, i.e.
+      // the worst case of a corner tap travelling to the opposite corner. But this wave's origin
+      // sits at (x*aspect/2, y/2) in height units and the stage corners at (±aspect/2, ±0.5), so
+      // the farthest corner from THIS tap is the hypot below. On a 405x720 stage a centre tap
+      // lived 1.63s while its crest left the screen at 0.69s, and every one of those extra frames
+      // kept waveGrad iterating in both shaders and — on Chromium — kept domWave rasterising the
+      // whole page and uploading a full-DPR texture. Now 0.94s for a centre tap; a corner tap is
+      // unchanged at 1.63s, because for that one the old bound was the right one.
+      // The decay test below still caps everything at 1.77s, so an off-stage tap (a drag that
+      // leaves the stage puts |x| > 1) can't stretch this without limit.
+      const reach = Math.hypot(aspect * (1 + Math.abs(w.x)) / 2,
+                                        (1 + Math.abs(w.y)) / 2) + A[2] * 3;
       if (w.age * A[1] > reach || Math.exp(-B[0] * w.age) * w.amp < 0.012) live.splice(i, 1);
     }
     for (let i = 0; i < WAVE.max; i++){
