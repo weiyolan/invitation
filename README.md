@@ -24,7 +24,8 @@ play in sequence. It reacts to:
   opens the acid resonance, and nudges the tempo up. Too hard? Slide it back down.
 - **RSVP** → the name form is pinned at the bottom for the whole slideshow, led by a
   small purple 🗓️ save-the-date button that downloads the `.ics`; names land on the
-  sign-off slide (shared list needs Supabase — see below).
+  sign-off slide, each name led by a star in its own bright colour (shared list needs
+  Supabase — see below).
 
 ## Slides & type scale
 
@@ -48,9 +49,11 @@ Tilt and audio need HTTPS — `file://` won't fire them; the Pages link will.
 Edit the `CONFIG` block at the top of the `<script>` in `index.html`: BPM, palette,
 per-beat durations, the calendar-event details, and the `supabase` guest-list keys.
 
-- `BPM` / `beatOffset` — the beat grid. Measured off the bundled track: 138.000 BPM with
-  the first kick 215 ms in. Swap the MP3 and these both need re-measuring, or every
-  beat-locked effect drifts.
+- `BPM` / `beatOffset` — the beat grid. Measured off the bundled track: 138.000 BPM with the
+  downbeat 323.5 ms in, confirmed by fitting each 40 s window separately (spread 1.35 ms, so
+  no drift). Swap the MP3 and these both need re-measuring, or every beat-locked effect sits
+  off the kick. Watch for landing a quarter-beat out: a grid fitted to the 16th-note hats
+  instead of the kick looks convincing but reads as consistently early.
 - `latencyNudge` — shift the beat grid if the visuals read early or late on a device. The
   audible kick lags the decode position by the audio output latency, and WebKit won't
   report it, so on iPhone this may want a small positive value.

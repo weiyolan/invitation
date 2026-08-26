@@ -323,7 +323,17 @@
     gap:.4em .9em; }
   .guests-screen li{ font-family:var(--mono); font-size:clamp(.8rem,3.2cqw,1.1rem); opacity:.92;
     overflow-wrap:anywhere; }
-  .guests-screen li:not(.empty)::before{ content:'✦ '; color:var(--spark); }
+  /* Every guest's star gets its own hue. --star-dh is set per <li> in renderGuest(), stepped by
+     the golden angle so no two land near each other whatever the list length, and it is an OFFSET
+     from --spark-h so the whole constellation still rotates with the accent instead of fighting it.
+     L and C are pinned at the widest point of the sRGB gamut (76% / 0.125): the most saturated a
+     hue-agnostic colour can be without clipping on some hues, which is what keeps every star
+     equally vivid and equally bright (12% luminance spread across the wheel, vs 67% in HSL). */
+  .guests-screen li:not(.empty)::before{
+    content:'✦ ';
+    color:oklch(76% 0.125 calc(var(--spark-h) + var(--star-dh, 0)));
+    text-shadow:0 0 6px oklch(76% 0.125 calc(var(--spark-h) + var(--star-dh, 0)) / .5);
+  }
   .guests-screen li.empty{ opacity:.5; }
 
   /* RSVP form — pinned for the whole slideshow so it's typable while the story rolls behind it */
@@ -582,10 +592,16 @@
    CONFIG — everything host-editable lives here.
    ======================================================================= */
 const CONFIG = {
-  // Measured off the MP3: 138.0004 BPM over the full 477 s, RMS 4.6 ms, no drift. This was 146,
-  // which slides a whole beat off the record every 3.8 s — the old synthPulse never was on time.
+  // Measured off the MP3 and re-confirmed by fitting each 40 s window independently: the implied
+  // tempo is 138.00008 and the grid drifts 0.3 ms over the whole 477 s, i.e. not at all. This was
+  // 146, which slides a whole beat off the record every 3.8 s.
   BPM: 138,
-  beatOffset: 0.215,   // seconds into the track where the first kick lands (+/- 5 ms)
+  // Seconds into the track where the downbeat lands. Fitted per 40 s window across the whole
+  // track: 319-324 ms every window, std 1.35 ms. An earlier least-squares pass said 215 ms, which
+  // was wrong by exactly a quarter beat (108 ms of a 435 ms beat) — it had locked onto the
+  // 16th-note hats rather than the kick. Sampling the 40-120 Hz band on this grid gives ~390 of
+  // kick energy per beat against ~265 on the old one, which is how you can tell them apart.
+  beatOffset: 0.3235,
   latencyNudge: 0,     // nudge if the surge reads early/late on a device: the audible kick lags the
                        // decode position by the output latency and WebKit won't report it.
   // The palette is ONE accent hue plus a fixed (lightness, chroma, hue-offset) table, in OKLCH.
@@ -812,7 +828,7 @@ const warp = (p, secPerBeat) => PULSE.depth * Math.sin(TAU * p) / TAU * secPerBe
 /* Accent colour. Starts on the designed teal and only travels once the show is actually running,
    so ?debug, CI screenshots and reduced-motion all stay on the original palette. */
 const ACCENT = {
-  // 0-indexed on the beat grid = the 11th beat, i.e. the drop. Measured off the track at 4.563 s,
+  // 0-indexed on the beat grid = the 11th beat, i.e. the drop. Measured off the track at 4.671 s,
   // carrying ~20x the near-silent intro's energy and 1.6x the steady groove that follows. Holding
   // the teal until here lands the first colour on the first heavy hit — and since beat 10 sits on
   // the track's own 4-beat accent (its high band runs ~25% hotter there), so does every roll after.
@@ -1713,6 +1729,11 @@ function renderGuest(name){
   const ul = $('#guest-list'); if (!ul) return;
   const empty = ul.querySelector('.empty'); if (empty) empty.remove();
   const li = document.createElement('li');
+  // Golden angle, so consecutive guests land far apart on the wheel and the sequence never starts
+  // repeating however long the list gets. Read after the placeholder is removed, so the first real
+  // guest is index 0. The list is append-only (Supabase orders by created_at), so a guest keeps
+  // their colour across reloads rather than being reshuffled by everyone who signs up later.
+  li.style.setProperty('--star-dh', ((ul.children.length * 137.507) % 360).toFixed(1));
   li.textContent = name;                 // textContent, never innerHTML — names are public untrusted input
   ul.appendChild(li);
 }
