@@ -172,7 +172,11 @@
       rgba(186,255,208,.55), oklch(var(--spark-lc) var(--spark-h) / .34) 14%,
       rgba(96,255,150,.16) 24%, transparent 54%);
   }
-  #retro-dither.tap::after{ animation:degauss .55s steps(14) both; }
+  /* Two classes carrying identical rules: alternating them restarts the degauss animation without
+     the `void dither.offsetWidth` reflow this used to need — a forced style+layout flush inside the
+     tap handler, on the most latency-sensitive path in the app. */
+  #retro-dither.tap-a::after,
+  #retro-dither.tap-b::after{ animation:degauss .55s steps(14) both; }
   @keyframes ditherPulse{
     0%   { opacity:.8;  transform:translate3d(-2.2%, .5%, 0) scale(1.04) skewX(-3deg); }
     30%  { opacity:1;   transform:translate3d(1.5%, -1.2%, 0) scale(1.08) skewX(2.2deg) rotate(.24deg); }
@@ -233,9 +237,14 @@
     display:flex; flex-direction:column; align-items:center; gap:1.1rem;
     opacity:0; transform:translateY(2.2rem) scale(.96); filter:blur(8px);
     transition:opacity .9s ease, transform 1.1s cubic-bezier(.2,.8,.2,1), filter 1s ease;
-    will-change:opacity,transform,filter;
   }
-  .beat.active{ opacity:1; transform:none; filter:none; }
+  /* will-change only on the slide actually on screen. On the base rule it promoted all eight
+     slides for the whole session — ~35MB of GPU texture at DPR 3, held for nothing, on a device
+     where the compositor evicting textures is a cliff rather than a slope. The outgoing slide
+     loses the hint as its fade-out starts, which is fine: Blink promotes for the duration of a
+     running compositable opacity/transform transition anyway. */
+  .beat.active{ opacity:1; transform:none; filter:none;
+    will-change:opacity,transform,filter; }
 
   /* ===== Slide typography — one scale, used by every slide ===== */
   .slide-title{
@@ -1146,7 +1155,12 @@ ${WAVE_GLSL}
       CONFIG.palette.stops.flatMap(p => oklchToRgb01(p.L, p.C, hue + p.dh)));
     gl.uniform3fv(u.pal, flat);
   }
-  function resize(w, h){ canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
+  // Guarded the way domWave.resize already guards: setting .width reallocates the whole drawing
+  // buffer even when the size is identical.
+  function resize(w, h){
+    if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+  }
   function draw(){
     gl.uniform2f(u.res, canvas.width, canvas.height);
     gl.uniform1f(u.time, state.flowTime % 60.0);   // beat-warped, see the warp() note
@@ -1527,10 +1541,14 @@ const overlay = (() => {
   const dotsWrap = $('#dots');
   BEATS.forEach(() => dotsWrap.appendChild(document.createElement('i')));   // one dot per screen
   const dots = [...dotsWrap.children];
+  let lastI = -1, lastLive = null;
   function update(){
     const i = beatIndexAt(state.sceneTime);
     const live = state.started;      // nothing on screen until the gate is tapped
-    state.beat = i;
+    state.beat = i;                  // stays ABOVE the guard — advance()/back() read it every tap
+    // ~40 classList/toggleAttribute calls per frame for a state that changes 8 times in 61s.
+    if (i === lastI && live === lastLive && !DEBUG) return;
+    lastI = i; lastLive = live;
     wrap.classList.toggle('live', live);
     blocks.forEach(b => {
       const on = live && +b.dataset.beat === i;
@@ -1696,8 +1714,22 @@ function onTilt(e){
 function initInput(){
   const stage = $('#stage');
   let down = null;
+  // getBoundingClientRect() forces a style+layout flush, and frame()'s custom-property writes
+  // guarantee style is dirty when it runs — so this was a full recalc on every pointermove, at the
+  // full touch sample rate (#stage is touch-action:none, so 120Hz+ on a modern phone). Invalidated
+  // once per frame rather than only on resize, because the body-flex centring on wide screens can
+  // move #stage without the ResizeObserver firing. A degenerate rect counts as a miss: pos()
+  // divides by r.width, and a 0 would make `moved` NaN and silently stop every tap registering.
+  let rect = null, rectFrame = -1;
+  const box = () => {
+    if (!rect || !rect.width || rectFrame !== frameNo){
+      rect = stage.getBoundingClientRect();
+      rectFrame = frameNo;
+    }
+    return rect;
+  };
   const pos = e => {
-    const r = stage.getBoundingClientRect();
+    const r = box();
     return { x: (e.clientX - r.left) / r.width * 2 - 1, y: -((e.clientY - r.top) / r.height * 2 - 1) };
   };
   const dither = $('#retro-dither');
@@ -1712,7 +1744,7 @@ function initInput(){
     const p = pos(e);
     down = { ...p, t: performance.now(), moved: 0 };
     track(p);
-  });
+  }, { passive:true });   // nothing here preventDefaults — #stage's touch-action:none does that job
   stage.addEventListener('pointermove', e => {
     const p = pos(e);
     track(p);
@@ -1720,7 +1752,7 @@ function initInput(){
       const dx = p.x - down.x, dy = p.y - down.y;
       down.moved += Math.abs(dx) + Math.abs(dy);   // tap-vs-drag detection only
     }
-  });
+  }, { passive:true });
   stage.addEventListener('pointerup', e => {
     if (!down) return;
     const tap = down.moved < 0.04 && (performance.now() - down.t) < 400;
@@ -1736,11 +1768,14 @@ function initInput(){
     if (dither){
       css('--burst-x', splashPct((x + 1) / 2));
       css('--burst-y', splashPct((-p.y + 1) / 2));
-      dither.classList.remove('tap');
-      void dither.offsetWidth;
-      dither.classList.add('tap');
+      // Alternate two identical classes instead of remove -> reflow -> add: same restart, no
+      // forced layout. See #retro-dither.tap-a/.tap-b in <style>.
+      const cur = dither._tapAlt ? 'tap-b' : 'tap-a';
+      dither.classList.remove(dither._tapAlt ? 'tap-a' : 'tap-b');
+      dither._tapAlt = !dither._tapAlt;
+      dither.classList.add(cur);
       clearTimeout(dither._tapTimer);
-      dither._tapTimer = setTimeout(() => dither.classList.remove('tap'), 560);   // matches @keyframes degauss
+      dither._tapTimer = setTimeout(() => dither.classList.remove(cur), 560);   // matches @keyframes degauss
     }
 
     if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
@@ -1919,18 +1954,25 @@ window.__seek = i => {
 /* =======================================================================
    Resize + main loop
    ======================================================================= */
+let lastW = -1, lastH = -1, lastDpr = -1;
 function resize(){
   const stage = $('#stage');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
-  if (plasma) plasma.resize(w, h);
+  const cw = stage.clientWidth, ch = stage.clientHeight;
+  // The ResizeObserver on #stage fires for every URL-bar show/hide on mobile, and nothing below is
+  // cheap: two multi-MB drawing-buffer reallocations plus a domWave.resize() that unconditionally
+  // drops the texture and forces a full-page recapture.
+  if (cw === lastW && ch === lastH && dpr === lastDpr) return;
+  lastW = cw; lastH = ch; lastDpr = dpr;
+  if (plasma) plasma.resize(Math.round(cw * dpr), Math.round(ch * dpr));
   // the wave field is sized in CSS px — it converts every length to stage-height units itself
-  waves.measure(stage.clientWidth, stage.clientHeight);
-  if (domWave) domWave.resize(stage.clientWidth, stage.clientHeight, dpr);
+  waves.measure(cw, ch);
+  if (domWave) domWave.resize(cw, ch, dpr);
 }
 
-let lastFrame = 0, lastPalHue = -1;
+let lastFrame = 0, lastPalHue = -1, frameNo = 0;
 function frame(now){
+  frameNo++;                       // invalidates initInput's cached stage rect
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
 
