@@ -896,6 +896,45 @@ const ACC_STOP = CONFIG.palette.stops[2];   // the accent's own L and C, shared 
    plasma's domain warp and the captured DOM's texture offset. Same numbers
    feed both shaders, so the background and the text can't drift apart.
    ======================================================================= */
+/* =======================================================================
+   Quality tier — ONE static decision, taken once at boot.
+
+   Phones get the cheap tier, desktop keeps exactly what it always had. Deliberately static and
+   deliberately NOT measured: a tier that reacted to frame times would make the output depend on how
+   many frames happened to elapse, and ?debug / __seek / prefers-reduced-motion have to stay
+   pixel-identical run to run because poster.jpg is regenerated through them. Being a boot-time
+   capability check instead means that determinism is free — there is nothing to lock.
+   ======================================================================= */
+const QUALITY = {
+  // Effective devicePixelRatio cap for #plasma ONLY. `high` is the original behaviour; `low` renders
+  // the plasma at CSS-pixel resolution and lets the compositor bilinear-upscale it — 4x fewer
+  // fragments on any DPR-2-or-better phone. The text and UI are separate DOM at full dpr and are
+  // never touched, which is the whole reason this is affordable. Try 1.5 if 1 reads too soft.
+  dpr:        { high: 2,   low: 1   },
+  // fbm octaves. This has to come down WITH the resolution rather than independently: the top
+  // octaves are exactly what aliases once the sample rate drops, and aliasing noise crawls frame to
+  // frame, which looks far worse than the softness it would replace. A matched pair, not two knobs.
+  octaves:    { high: 5,   low: 3   },
+  // Chromatic dispersion on the DOM refraction pass: > 0.001 takes the 3-texture-fetch branch,
+  // 0 takes the 1-fetch one. Chromium-only either way (domWave is null without the origin trial).
+  dispersion: { high: 0.5, low: 0   },
+  // Concurrent live waves, under WAVE.max's 6 uniform slots. Tapping left/right is how you navigate
+  // the slides, so a visitor walking through the show can otherwise stack all six at once.
+  maxLive:    { high: 6,   low: 3   },
+};
+const TIER = (() => {
+  const q = params.get('q');
+  if (q === 'high' || q === 'low') return q;   // ?q=high|low — A/B both tiers on one device
+  // A capability query, not a viewport size, and not maxTouchPoints (which is > 0 on any
+  // touchscreen laptop). verify.mjs emulates no touch in any of its three browser contexts, so CI
+  // always lands on `high` and the committed poster.jpg cannot move with this.
+  return matchMedia('(pointer: coarse)').matches &&
+         !matchMedia('(hover: hover)').matches ? 'low' : 'high';
+})();
+const Q = {};
+for (const k in QUALITY) Q[k] = QUALITY[k][TIER];
+window.__tier = () => ({ tier: TIER, ...Q });   // verify/debug readout
+
 const WAVE = {
   max: 6,            // uniform-array slots. 6 keeps the plasma inside the 16 fragment uniform
                      // vectors GLES2 actually guarantees — it already spends ~9 on res/time/
@@ -939,7 +978,10 @@ const waves = (() => {
   measure(405, 720);   // nominal 9:16 phone, so nothing is ever zero before the first real layout
   function splash(x, y, amp = 1){
     if (reducedMotion) return;
-    if (live.length >= WAVE.max) live.shift();     // oldest wave gives up its slot
+    // Q.maxLive, not WAVE.max: the 6 uniform slots stay compiled in either way, but on a phone the
+    // per-fragment cost of six concurrent waveGrad iterations is real and you rarely perceive more
+    // than three overlapping shockwaves.
+    while (live.length >= Q.maxLive) live.shift();   // oldest wave gives up its slot
     live.push({ x, y, age:0, amp });
   }
   function step(dt){
@@ -1015,6 +1057,12 @@ const plasma = (() => {
     attribute vec2 aPos;
     void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
+  // The octave weights (.5, .25, …) sum to 1 - 2^-n: 0.96875 at 5 octaves, 0.875 at 3. A bare
+  // octave cut would therefore darken all eight fbm consumers by ~10% and quietly re-tune every
+  // palette lookup and smoothstep threshold downstream. Normalising back to the 5-octave range
+  // means dropping octaves makes the field smoother, not darker.
+  const FBM_NORM = ((1 - Math.pow(0.5, 5)) / (1 - Math.pow(0.5, Q.octaves))).toFixed(6);
+
   const FRAG = `
     #ifdef GL_FRAGMENT_PRECISION_HIGH
       precision highp float;
@@ -1048,8 +1096,8 @@ ${WAVE_GLSL}
     }
     float fbm(vec2 p){
       float v = 0.0, a = 0.5;
-      for (int i = 0; i < 5; i++){ v += a * noise(p); p *= 2.0; a *= 0.5; }
-      return v;
+      for (int i = 0; i < ${Q.octaves}; i++){ v += a * noise(p); p *= 2.0; a *= 0.5; }
+      return v * ${FBM_NORM};   // see FBM_NORM: keeps the range put as the octave count drops
     }
     vec3 palette(float t){
       t = clamp(t, 0.0, 1.0);
@@ -1413,7 +1461,7 @@ ${WAVE_GLSL}
     gl.uniform3fv(u.waveA, waves.A);
     gl.uniform3fv(u.waveB, waves.B);
     gl.uniform1f(u.refract, waves.refractH);
-    gl.uniform1f(u.disp, Math.max(WAVE.dispersion, 0));
+    gl.uniform1f(u.disp, Math.max(Q.dispersion, 0));   // 0 on the low tier -> 1 texture fetch, not 3
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     drew = true;
   }
@@ -1957,15 +2005,22 @@ window.__seek = i => {
 let lastW = -1, lastH = -1, lastDpr = -1;
 function resize(){
   const stage = $('#stage');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);          // text / DOM refraction
+  // #plasma only. The shader is fully resolution-independent — uv is normalised by uRes (see the
+  // first line of main()) and the wave field is in stage-height units — so shrinking the buffer
+  // changes sampling density and nothing else: same framing, same wave, same uProgress ramp.
+  const pxDpr = Math.min(window.devicePixelRatio || 1, Q.dpr);
   const cw = stage.clientWidth, ch = stage.clientHeight;
   // The ResizeObserver on #stage fires for every URL-bar show/hide on mobile, and nothing below is
   // cheap: two multi-MB drawing-buffer reallocations plus a domWave.resize() that unconditionally
   // drops the texture and forces a full-page recapture.
   if (cw === lastW && ch === lastH && dpr === lastDpr) return;
   lastW = cw; lastH = ch; lastDpr = dpr;
-  if (plasma) plasma.resize(Math.round(cw * dpr), Math.round(ch * dpr));
-  // the wave field is sized in CSS px — it converts every length to stage-height units itself
+  if (plasma) plasma.resize(Math.max(1, Math.round(cw * pxDpr)),
+                            Math.max(1, Math.round(ch * pxDpr)));
+  // The wave field is sized in CSS px — it converts every length to stage-height units itself, and
+  // it must NEVER see pxDpr: these lengths are shared with #dom-out's refraction shader, so scaling
+  // them would change the wave's speed and wavelength and desync the text from the background.
   waves.measure(cw, ch);
   if (domWave) domWave.resize(cw, ch, dpr);
 }
