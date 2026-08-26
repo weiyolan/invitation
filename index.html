@@ -812,7 +812,12 @@ const warp = (p, secPerBeat) => PULSE.depth * Math.sin(TAU * p) / TAU * secPerBe
 /* Accent colour. Starts on the designed teal and only travels once the show is actually running,
    so ?debug, CI screenshots and reduced-motion all stay on the original palette. */
 const ACCENT = {
-  everyN: 8,        // beats between colour changes
+  // 0-indexed on the beat grid = the 11th beat, i.e. the drop. Measured off the track at 4.563 s,
+  // carrying ~20x the near-silent intro's energy and 1.6x the steady groove that follows. Holding
+  // the teal until here lands the first colour on the first heavy hit — and since beat 10 sits on
+  // the track's own 4-beat accent (its high band runs ~25% hotter there), so does every roll after.
+  firstBeat: 10,
+  everyN: 4,        // beats between colour changes — 1.74 s, one bar
   everyNHyper: 2,   // ...once someone has RSVP'd. At 1.6x playback that's 543 ms.
   minStep: 55,      // never jump less than this: a raw random hue can land next to the current
   maxStep: 305,     // one and read as no change at all.
@@ -1888,14 +1893,19 @@ function frame(now){
   // the designed teal, and so keeps poster.jpg stable.
   if (state.started && !state.paused && !reducedMotion){
     const n = state.hyper ? ACCENT.everyNHyper : ACCENT.everyN;
-    const slot = Math.floor(beats / n);
-    if (state.hueSlot === null) state.hueSlot = slot;      // first live frame: latch, don't jump
-    else if (slot !== state.hueSlot){
-      state.hueSlot = slot;
+    // Sit on the designed teal through the intro so the first roll can land on the drop. The guard
+    // is re-tested against media time, so it closes again at the loop seam and every pass through
+    // the track gets the same musical opening — at the cost of a ~4.8 s hold once every ~8 min.
+    if (beats >= ACCENT.firstBeat){
+      const slot = Math.floor((beats - ACCENT.firstBeat) / n);
       // !== rather than >: the track loops at 1096.85 beats, so `beats` steps backwards at the
-      // seam and a > test would sit dead until it caught back up.
-      state.hueTarget = (state.hueTarget + ACCENT.minStep
-                         + Math.random() * (ACCENT.maxStep - ACCENT.minStep)) % 360;
+      // seam and a > test would sit dead until it caught back up. Starting from hueSlot === null
+      // is also what makes the crossing at firstBeat itself fire, rather than being swallowed.
+      if (slot !== state.hueSlot){
+        state.hueSlot = slot;
+        state.hueTarget = (state.hueTarget + ACCENT.minStep
+                           + Math.random() * (ACCENT.maxStep - ACCENT.minStep)) % 360;
+      }
     }
     // slide the short way round the wheel, so 350 -> 20 never sweeps back through cyan
     const d = ((state.hueTarget - state.accentHue + 540) % 360) - 180;

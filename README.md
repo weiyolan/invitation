@@ -16,7 +16,8 @@ play in sequence. It reacts to:
 - **The music** → its low end drives the visual pulse, and the plasma's liquid drift is
   locked to the 138 BPM beat grid: it surges on the kick and drags off it (1.45× / 0.55×,
   with the average pace unchanged).
-- **The colour** → the teal accent randomises every 8 beats, and every 2 beats once
+- **The colour** → the teal accent holds through the intro, changes for the first time
+  *on the drop* (the 11th beat), then randomises every 4 beats — every 2 beats once
   somebody has RSVP'd. The whole composition rotates together — plasma field, UI accent
   and the paired purple — because it is all one hue plus a fixed lightness/chroma table.
 - **HYPE slider** (top-left) → cranks the hardstyle in real time: distorts the kick,
@@ -60,7 +61,12 @@ per-beat durations, the calendar-event details, and the `supabase` guest-list ke
   reproduce the original hexes exactly.
 - `PULSE.depth` (just below `WAVE`) — how hard the liquid surges on the kick. `0.45` is
   1.45× on the beat and 0.55× off it; `0` restores the old constant drift.
+- `ACCENT.firstBeat` — which beat the first colour change lands on, 0-indexed on the beat
+  grid. `10` is the 11th beat, i.e. the drop, measured as the intro's biggest transient. The
+  accent holds on the designed teal until here, on every pass through the looping track.
 - `ACCENT.everyN` / `everyNHyper` — beats between colour changes, before and after an RSVP.
+  The cycle is anchored at `firstBeat`, so with `everyN: 4` each change lands on the same
+  position in the bar as the drop.
 
 ## Guest list (RSVP)
 
