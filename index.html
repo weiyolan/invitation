@@ -138,7 +138,14 @@
     background-size:100% 100%, 100% 100%;
     mix-blend-mode: overlay;
     opacity:1;
-    filter:contrast(2.8) brightness(.72) saturate(2.2) blur(.18px);
+    /* Was: contrast(2.8) brightness(.72) saturate(2.2) blur(.18px).
+       A .18px Gaussian is sub-pixel — invisible at phone viewing distance — but it is what forced
+       the whole chain to re-run every frame: a blur is defined in DEVICE space, so ditherPulse's
+       scale(1.04 -> 1.18) changed its effective radius on every keyframe step. The remaining three
+       are per-pixel and scale-invariant, so the filtered result can be cached and merely
+       re-composited and re-blended as the animation runs. Dropping it also deletes a two-pass
+       separable convolution over ~1.6x the stage area. */
+    filter:contrast(2.8) brightness(.72) saturate(2.2);
     /* ditherShift dropped with the crosshatch: it only moved background-position on those two
        layers, so it would now run 0.56s steps(2) forever for no visible effect. */
     animation:ditherPulse 3.6s ease-in-out infinite alternate;
@@ -155,12 +162,23 @@
   }
   /* the follower runs far dimmer than the burst — the parent's contrast(2.8) saturate(2.2) amplifies it hard */
   #retro-dither::before{
-    /* the beat pumps the radius, not the opacity: --amp changes every frame and would restart
-       the fade-in transition 60x/sec. Radius scales about the gradient centre, so the blob
-       stays under the pointer (scaling the element itself would drag it off-centre). */
-    background: radial-gradient(circle calc(30cqmin + var(--amp) * 9cqmin) at var(--tap-x) var(--tap-y),
+    /* The beat pump and the pointer follow are both TRANSFORMS now, not background geometry. They
+       used to be a calc() radius and a calc() centre, so every frame changed the gradient's
+       geometry — which re-rasterised a full-screen gradient, re-ran the parent's filter chain over
+       it and re-blended the result against the plasma. And because .trail was never removed, that
+       ran from the first touch to the end of the session: tapping once made the whole app
+       permanently slower, which is exactly what read as "the ripple is expensive".
+       The substitution is exact. transform-origin is the gradient's own centre and it is a fixed
+       point of the scale, so scale(1 + --amp*.3) on a 30cqmin circle is identically the old
+       30cqmin + --amp*9cqmin, stops and all (34%/70% are relative to the ending shape). translate()
+       percentages resolve against this element's own border box — the same box splashPct() already
+       compresses --tap-x/--tap-y into. Only opacity is transitioned: the pump must stay instant. */
+    background: radial-gradient(circle 30cqmin at 50% 50%,
       oklch(var(--spark-lc) var(--spark-h) / .20),
       oklch(69.36% 0.1757 calc(var(--spark-h) + 110.87) / .12) 34%, transparent 70%);
+    transform-origin:50% 50%;
+    transform:translate(calc(var(--tap-x) - 50%), calc(var(--tap-y) - 50%))
+              scale(calc(1 + var(--amp) * 0.3));
     transition:opacity .45s ease;
   }
   #retro-dither.trail::before{ opacity:.72; }
@@ -172,7 +190,11 @@
       rgba(186,255,208,.55), oklch(var(--spark-lc) var(--spark-h) / .34) 14%,
       rgba(96,255,150,.16) 24%, transparent 54%);
   }
-  #retro-dither.tap::after{ animation:degauss .55s steps(14) both; }
+  /* Two classes carrying identical rules: alternating them restarts the degauss animation without
+     the `void dither.offsetWidth` reflow this used to need — a forced style+layout flush inside the
+     tap handler, on the most latency-sensitive path in the app. */
+  #retro-dither.tap-a::after,
+  #retro-dither.tap-b::after{ animation:degauss .55s steps(14) both; }
   @keyframes ditherPulse{
     0%   { opacity:.8;  transform:translate3d(-2.2%, .5%, 0) scale(1.04) skewX(-3deg); }
     30%  { opacity:1;   transform:translate3d(1.5%, -1.2%, 0) scale(1.08) skewX(2.2deg) rotate(.24deg); }
@@ -233,9 +255,14 @@
     display:flex; flex-direction:column; align-items:center; gap:1.1rem;
     opacity:0; transform:translateY(2.2rem) scale(.96); filter:blur(8px);
     transition:opacity .9s ease, transform 1.1s cubic-bezier(.2,.8,.2,1), filter 1s ease;
-    will-change:opacity,transform,filter;
   }
-  .beat.active{ opacity:1; transform:none; filter:none; }
+  /* will-change only on the slide actually on screen. On the base rule it promoted all eight
+     slides for the whole session — ~35MB of GPU texture at DPR 3, held for nothing, on a device
+     where the compositor evicting textures is a cliff rather than a slope. The outgoing slide
+     loses the hint as its fade-out starts, which is fine: Blink promotes for the duration of a
+     running compositable opacity/transform transition anyway. */
+  .beat.active{ opacity:1; transform:none; filter:none;
+    will-change:opacity,transform,filter; }
 
   /* ===== Slide typography — one scale, used by every slide ===== */
   .slide-title{
@@ -457,6 +484,25 @@
   #debug input[type=range]{ flex:1; accent-color:#b87a34; }
   #dbg-dom{ white-space:nowrap; opacity:.8; }
 
+  /* ?perf HUD. Literal hex and never var(--spark-*): a readout that consumed the accent tokens
+     would become another consumer of the thing it is measuring. `contain` keeps its own repaints
+     out of everyone else's invalidation. */
+  #perf{ position:absolute; left:0; top:0; z-index:20; display:none; max-width:100%;
+    padding:.45em .55em; background:#000c; color:#7fe9d6;
+    font:11px/1.35 var(--mono); white-space:pre; pointer-events:none;
+    contain:layout style paint; }
+  #perf.on{ display:block; }
+  #perf pre{ font:inherit; margin:0; }
+  #perf-tog{ display:flex; flex-wrap:wrap; gap:.25em; margin-top:.4em; pointer-events:auto; }
+  #perf-tog button{ font:inherit; color:#e7efee; background:#ffffff26; border:1px solid #ffffff44;
+    border-radius:3px; padding:.15em .45em; }
+  #perf-tog button[aria-pressed="true"]{ background:#7fe9d6; color:#04100e; }
+  /* Ablation switches. !important because #retro-dither.trail::before out-specifies a body class. */
+  .perf-no-dither #retro-dither{ display:none !important; }
+  .perf-no-filter #retro-dither{ filter:none !important; }
+  .perf-no-trail  #retro-dither::before{ opacity:0 !important; }
+  .perf-no-wc     .beat.active{ will-change:auto !important; }
+
   @media (prefers-reduced-motion: reduce){
     #gate .play{ animation:none; }
     .no-webgl #fallback{ animation:none; }
@@ -464,9 +510,30 @@
     #hype.broken{ animation:none; }
     .arrow-down{ animation:none; }
     .arrow-down .shaft{ animation:none; stroke-dasharray:none; }
+    /* Full-screen, overlay-blended, filtered, and animating opacity + transform forever: the
+       single largest piece of motion on the page, and the only one that was not honouring this
+       query. */
+    #retro-dither{ animation:none; }
     /* No rule needed for the per-beat colour change any more: frame() gates the accent rotation
        (and the beat-warped plasma clock) on !reducedMotion, so neither ever starts. */
   }
+
+  /* ?debug and __seek hold every clock still so the frame is a pure function of the seek position.
+     ditherPulse is a wall-clock CSS animation, though, so it kept running underneath and the
+     committed poster.jpg captured it at whatever phase CI happened to reach: three consecutive
+     verify.mjs runs on an unmodified tree wrote 142608 / 136028 / 128467-byte posters, i.e. the
+     hero frame was substantially different every time. animation:none and not
+     animation-play-state:paused, so it snaps to the base style (opacity:1, no transform) rather
+     than freezing wherever it happened to get to. */
+  body.frozen #retro-dither{ animation:none; }
+  /* Two fade-ins also stand between __seek and a settled frame: #overlay's opacity (.9s after a
+     .25s delay) and each .beat's opacity/transform/filter (.9-1.1s). verify.mjs screenshots 180ms
+     after .active lands — inside #overlay's delay — which is why the committed poster.jpg was pure
+     plasma with no title on it, and why run-to-run drift survived freezing ditherPulse: the
+     capture landed at whatever phase of two transitions CI happened to reach. A held clock has
+     nothing to animate towards, so snap to the arrived state. */
+  body.frozen #overlay,
+  body.frozen .beat{ transition:none; }
 </style>
 </head>
 <body>
@@ -584,6 +651,12 @@
   </div><!-- /#dom-content -->
 
   <canvas id="dom-out" aria-hidden="true"></canvas>
+
+  <!-- ?perf readout. Deliberately OUTSIDE #dom-content: everything in there is only visible via the
+       captured 2D bitmap once domWave arms, which is refreshed on demand, so a HUD in there would
+       sit frozen. As a direct child of #stage at z20 it is above #dom-out and never part of a
+       capture. -->
+  <div id="perf" aria-hidden="true"><pre id="perf-out"></pre><div id="perf-tog"></div></div>
 </main>
 
 <script>
@@ -664,6 +737,24 @@ const lerp  = (a,b,t) => a + (b - a) * t;
 const SPLASH_SPAN = 1.08 * 1.2;
 const splashPct = t => (50 + (clamp(t, 0, 1) * 100 - 50) / SPLASH_SPAN).toFixed(2) + '%';
 const params = new URLSearchParams(location.search);
+const DEBUG = params.has('debug');   // hoisted: URLSearchParams.has is a linear scan, and this
+                                     // used to run once per frame from overlay.update()
+/* One custom-property write on :root is a document-wide style invalidation. --spark-h alone is read
+   by ~30 oklch() tokens including --stage-bg, every text-shadow and two full-screen inset
+   box-shadows, and it only actually moves during the 0.09s accent tween — about 5 frames in every
+   105. So write only when the FORMATTED string differs from what we last set. */
+const rootStyle = document.documentElement.style;
+const cssLast = Object.create(null);
+function css(name, value){
+  if (cssLast[name] === value) return;
+  cssLast[name] = value;
+  rootStyle.setProperty(name, value);
+}
+/* Quantise-then-format: the string is the comparison key, so the step has to live in the formatter.
+   step === 0 means full precision, and that is what the FROZEN clock gets — ?debug / __seek /
+   reduced-motion must stay byte-identical run to run because poster.jpg is regenerated through
+   them, and a rounded --amp would move the RSVP glow by a fraction of a pixel. */
+const qf = (v, step, dp) => (step ? Math.round(v / step) * step : v).toFixed(dp);
 /* --- OKLCH -> sRGB, so one accent hue can drive the whole palette (see CONFIG.palette) ---------
    Oklab is perceptually uniform, which is the entire point: rotate hue at fixed L and the real
    luminance — and so the contrast against the near-black stage — stays put. */
@@ -848,6 +939,45 @@ const ACC_STOP = CONFIG.palette.stops[2];   // the accent's own L and C, shared 
    plasma's domain warp and the captured DOM's texture offset. Same numbers
    feed both shaders, so the background and the text can't drift apart.
    ======================================================================= */
+/* =======================================================================
+   Quality tier — ONE static decision, taken once at boot.
+
+   Phones get the cheap tier, desktop keeps exactly what it always had. Deliberately static and
+   deliberately NOT measured: a tier that reacted to frame times would make the output depend on how
+   many frames happened to elapse, and ?debug / __seek / prefers-reduced-motion have to stay
+   pixel-identical run to run because poster.jpg is regenerated through them. Being a boot-time
+   capability check instead means that determinism is free — there is nothing to lock.
+   ======================================================================= */
+const QUALITY = {
+  // Effective devicePixelRatio cap for #plasma ONLY. `high` is the original behaviour; `low` renders
+  // the plasma at CSS-pixel resolution and lets the compositor bilinear-upscale it — 4x fewer
+  // fragments on any DPR-2-or-better phone. The text and UI are separate DOM at full dpr and are
+  // never touched, which is the whole reason this is affordable. Try 1.5 if 1 reads too soft.
+  dpr:        { high: 2,   low: 1   },
+  // fbm octaves. This has to come down WITH the resolution rather than independently: the top
+  // octaves are exactly what aliases once the sample rate drops, and aliasing noise crawls frame to
+  // frame, which looks far worse than the softness it would replace. A matched pair, not two knobs.
+  octaves:    { high: 5,   low: 3   },
+  // Chromatic dispersion on the DOM refraction pass: > 0.001 takes the 3-texture-fetch branch,
+  // 0 takes the 1-fetch one. Chromium-only either way (domWave is null without the origin trial).
+  dispersion: { high: 0.5, low: 0   },
+  // Concurrent live waves, under WAVE.max's 6 uniform slots. Tapping left/right is how you navigate
+  // the slides, so a visitor walking through the show can otherwise stack all six at once.
+  maxLive:    { high: 6,   low: 3   },
+};
+const TIER = (() => {
+  const q = params.get('q');
+  if (q === 'high' || q === 'low') return q;   // ?q=high|low — A/B both tiers on one device
+  // A capability query, not a viewport size, and not maxTouchPoints (which is > 0 on any
+  // touchscreen laptop). verify.mjs emulates no touch in any of its three browser contexts, so CI
+  // always lands on `high` and the committed poster.jpg cannot move with this.
+  return matchMedia('(pointer: coarse)').matches &&
+         !matchMedia('(hover: hover)').matches ? 'low' : 'high';
+})();
+const Q = {};
+for (const k in QUALITY) Q[k] = QUALITY[k][TIER];
+window.__tier = () => ({ tier: TIER, ...Q });   // verify/debug readout
+
 const WAVE = {
   max: 6,            // uniform-array slots. 6 keeps the plasma inside the 16 fragment uniform
                      // vectors GLES2 actually guarantees — it already spends ~9 on res/time/
@@ -860,6 +990,8 @@ const WAVE = {
   decay: 2.5,        // energy loss — higher dies faster. Raise toward 2 if the wake reads as mushy
   warp: 0.18,        // how far the plasma domain shifts, in height units. Tune to taste.
   refraction: 100,   // how far the captured DOM bends, in CSS px
+  trailIdle: 1600,   // ms of pointer silence before the follower blob fades out. Drop the timeout
+                     // in track() if you want the old sticky-forever behaviour back.
   dispersion: 0.5,   // chromatic split along the wave slopes
   shine: 0.5,        // glint on the crests
 };
@@ -891,14 +1023,28 @@ const waves = (() => {
   measure(405, 720);   // nominal 9:16 phone, so nothing is ever zero before the first real layout
   function splash(x, y, amp = 1){
     if (reducedMotion) return;
-    if (live.length >= WAVE.max) live.shift();     // oldest wave gives up its slot
+    // Q.maxLive, not WAVE.max: the 6 uniform slots stay compiled in either way, but on a phone the
+    // per-fragment cost of six concurrent waveGrad iterations is real and you rarely perceive more
+    // than three overlapping shockwaves.
+    while (live.length >= Q.maxLive) live.shift();   // oldest wave gives up its slot
     live.push({ x, y, age:0, amp });
   }
   function step(dt){
-    const reach = Math.hypot(aspect, 1) + A[2] * 3;   // cleared the stage diagonal + the envelope
     for (let i = live.length - 1; i >= 0; i--){
       const w = live[i];
       w.age += dt;
+      // reach used to be Math.hypot(aspect, 1) — the whole stage diagonal — for EVERY wave, i.e.
+      // the worst case of a corner tap travelling to the opposite corner. But this wave's origin
+      // sits at (x*aspect/2, y/2) in height units and the stage corners at (±aspect/2, ±0.5), so
+      // the farthest corner from THIS tap is the hypot below. On a 405x720 stage a centre tap
+      // lived 1.63s while its crest left the screen at 0.69s, and every one of those extra frames
+      // kept waveGrad iterating in both shaders and — on Chromium — kept domWave rasterising the
+      // whole page and uploading a full-DPR texture. Now 0.94s for a centre tap; a corner tap is
+      // unchanged at 1.63s, because for that one the old bound was the right one.
+      // The decay test below still caps everything at 1.77s, so an off-stage tap (a drag that
+      // leaves the stage puts |x| > 1) can't stretch this without limit.
+      const reach = Math.hypot(aspect * (1 + Math.abs(w.x)) / 2,
+                                        (1 + Math.abs(w.y)) / 2) + A[2] * 3;
       if (w.age * A[1] > reach || Math.exp(-B[0] * w.age) * w.amp < 0.012) live.splice(i, 1);
     }
     for (let i = 0; i < WAVE.max; i++){
@@ -956,6 +1102,12 @@ const plasma = (() => {
     attribute vec2 aPos;
     void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
+  // The octave weights (.5, .25, …) sum to 1 - 2^-n: 0.96875 at 5 octaves, 0.875 at 3. A bare
+  // octave cut would therefore darken all eight fbm consumers by ~10% and quietly re-tune every
+  // palette lookup and smoothstep threshold downstream. Normalising back to the 5-octave range
+  // means dropping octaves makes the field smoother, not darker.
+  const FBM_NORM = ((1 - Math.pow(0.5, 5)) / (1 - Math.pow(0.5, Q.octaves))).toFixed(6);
+
   const FRAG = `
     #ifdef GL_FRAGMENT_PRECISION_HIGH
       precision highp float;
@@ -989,8 +1141,8 @@ ${WAVE_GLSL}
     }
     float fbm(vec2 p){
       float v = 0.0, a = 0.5;
-      for (int i = 0; i < 5; i++){ v += a * noise(p); p *= 2.0; a *= 0.5; }
-      return v;
+      for (int i = 0; i < ${Q.octaves}; i++){ v += a * noise(p); p *= 2.0; a *= 0.5; }
+      return v * ${FBM_NORM};   // see FBM_NORM: keeps the range put as the octave count drops
     }
     vec3 palette(float t){
       t = clamp(t, 0.0, 1.0);
@@ -998,16 +1150,26 @@ ${WAVE_GLSL}
                      : mix(uPal[1], uPal[2], t * 2.0 - 1.0);
     }
     void main(){
-      vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-      uv += uTilt * 0.15;
+      // screenUv is where the finger actually is; uv is the parallaxed field. The tilt is meant to
+      // shift the plasma FIELD, not the place the user touched — feeding the tilted uv to waveGrad
+      // dragged the tap ring (and the pointer ring below) off the finger by uTilt * 0.15, i.e. up to
+      // 137px on a 915px stage. Worst in an upright hold, because tiltTarget.y = (beta - 45)/45
+      // saturates at 1.0 around beta 90, so the offset sat pinned at maximum rather than wobbling.
+      // #dom-out's refraction shader always fed waveGrad the untilted coordinate, so the text and
+      // the background rippled around two different centres; the comment there claiming "exactly
+      // the plasma's space" only becomes true with this.
+      vec2 screenUv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+      vec2 uv = screenUv + uTilt * 0.15;
       // vec2 uv0 = uv;   // was the undisplaced anchor for pointerGlow — commented out with it
       // uPointer is NDC [-1..1]; uv is normalised by height, so the pointer has to be scaled into
       // uv units (half-extent .5 vertically, .5*aspect horizontally) or it lands off-screen.
-      vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0);
+      // Lift the pointer INTO the tilted space rather than un-tilting uv here: the standing ring
+      // stays under the finger while still being warped by the tap wave downstream, as before.
+      vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0) + uTilt * 0.15;
       // Travelling wave train from taps. Distinct from the 'ripple' below, which is the standing
       // ring that sits under the pointer — this one leaves the tap point and crosses the stage.
       // Sampled from the tilted uv, same as the pointer, then warps everything downstream.
-      vec2 wg = waveGrad(uv, uRes.x / uRes.y);
+      vec2 wg = waveGrad(screenUv, uRes.x / uRes.y);
       uv += wg * uWaveB.y;
       // domain-warped fbm advected by a drifting flow → the field physically moves like
       // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
@@ -1096,7 +1258,12 @@ ${WAVE_GLSL}
       CONFIG.palette.stops.flatMap(p => oklchToRgb01(p.L, p.C, hue + p.dh)));
     gl.uniform3fv(u.pal, flat);
   }
-  function resize(w, h){ canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
+  // Guarded the way domWave.resize already guards: setting .width reallocates the whole drawing
+  // buffer even when the size is identical.
+  function resize(w, h){
+    if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+  }
   function draw(){
     gl.uniform2f(u.res, canvas.width, canvas.height);
     gl.uniform1f(u.time, state.flowTime % 60.0);   // beat-warped, see the warp() note
@@ -1349,7 +1516,7 @@ ${WAVE_GLSL}
     gl.uniform3fv(u.waveA, waves.A);
     gl.uniform3fv(u.waveB, waves.B);
     gl.uniform1f(u.refract, waves.refractH);
-    gl.uniform1f(u.disp, Math.max(WAVE.dispersion, 0));
+    gl.uniform1f(u.disp, Math.max(Q.dispersion, 0));   // 0 on the low tier -> 1 texture fetch, not 3
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     drew = true;
   }
@@ -1477,10 +1644,14 @@ const overlay = (() => {
   const dotsWrap = $('#dots');
   BEATS.forEach(() => dotsWrap.appendChild(document.createElement('i')));   // one dot per screen
   const dots = [...dotsWrap.children];
+  let lastI = -1, lastLive = null;
   function update(){
     const i = beatIndexAt(state.sceneTime);
     const live = state.started;      // nothing on screen until the gate is tapped
-    state.beat = i;
+    state.beat = i;                  // stays ABOVE the guard — advance()/back() read it every tap
+    // ~40 classList/toggleAttribute calls per frame for a state that changes 8 times in 61s.
+    if (i === lastI && live === lastLive && !DEBUG) return;
+    lastI = i; lastLive = live;
     wrap.classList.toggle('live', live);
     blocks.forEach(b => {
       const on = live && +b.dataset.beat === i;
@@ -1491,7 +1662,7 @@ const overlay = (() => {
     dotsWrap.classList.toggle('show', live);
     // the RSVP form (save-the-date + name) owns the bottom slot for the whole show
     rsvp.classList.toggle('show', live);
-    if (params.has('debug')){
+    if (DEBUG){
       $('#dbg-beat').textContent = BEATS[i].id;
       // the capture path can only be exercised on the deploy, so surface what it actually did
       const d = window.__domWaveState();
@@ -1646,8 +1817,22 @@ function onTilt(e){
 function initInput(){
   const stage = $('#stage');
   let down = null;
+  // getBoundingClientRect() forces a style+layout flush, and frame()'s custom-property writes
+  // guarantee style is dirty when it runs — so this was a full recalc on every pointermove, at the
+  // full touch sample rate (#stage is touch-action:none, so 120Hz+ on a modern phone). Invalidated
+  // once per frame rather than only on resize, because the body-flex centring on wide screens can
+  // move #stage without the ResizeObserver firing. A degenerate rect counts as a miss: pos()
+  // divides by r.width, and a 0 would make `moved` NaN and silently stop every tap registering.
+  let rect = null, rectFrame = -1;
+  const box = () => {
+    if (!rect || !rect.width || rectFrame !== frameNo){
+      rect = stage.getBoundingClientRect();
+      rectFrame = frameNo;
+    }
+    return rect;
+  };
   const pos = e => {
-    const r = stage.getBoundingClientRect();
+    const r = box();
     return { x: (e.clientX - r.left) / r.width * 2 - 1, y: -((e.clientY - r.top) / r.height * 2 - 1) };
   };
   const dither = $('#retro-dither');
@@ -1656,13 +1841,21 @@ function initInput(){
   const track = p => {
     state.pointerTarget.x = p.x; state.pointerTarget.y = p.y;
     if (!seen){ seen = true; state.pointer.x = p.x; state.pointer.y = p.y; }
-    if (state.started) dither.classList.add('trail');
+    if (state.started){
+      dither.classList.add('trail');
+      // .trail used to be add-only, so a "follower" that is documented as following hover and drag
+      // instead sat under the last touch point for the rest of the session — on a phone there is no
+      // hover to move it on. That left a full-screen screen-blended gradient live and repainting
+      // from the first touch onward. The .45s opacity transition carries the fade-out.
+      clearTimeout(dither._trailTimer);
+      dither._trailTimer = setTimeout(() => dither.classList.remove('trail'), WAVE.trailIdle);
+    }
   };
   stage.addEventListener('pointerdown', e => {
     const p = pos(e);
     down = { ...p, t: performance.now(), moved: 0 };
     track(p);
-  });
+  }, { passive:true });   // nothing here preventDefaults — #stage's touch-action:none does that job
   stage.addEventListener('pointermove', e => {
     const p = pos(e);
     track(p);
@@ -1670,7 +1863,7 @@ function initInput(){
       const dx = p.x - down.x, dy = p.y - down.y;
       down.moved += Math.abs(dx) + Math.abs(dy);   // tap-vs-drag detection only
     }
-  });
+  }, { passive:true });
   stage.addEventListener('pointerup', e => {
     if (!down) return;
     const tap = down.moved < 0.04 && (performance.now() - down.t) < 400;
@@ -1679,22 +1872,27 @@ function initInput(){
     down = null;
     if (!tap) return;
     if (!state.started) return;
+    // Tapping a ?perf toggle must spawn neither a wave nor a burst — splash() below runs before the
+    // navigation whitelist, so without this the HUD would perturb exactly what it is measuring.
+    if (e.target.closest('#perf')) return;
 
     // splash on every tap, UI included — the whitelist below only blocks slide navigation
     // the travelling wave: p is already NDC, which is the space the wave field works in
     waves.splash(p.x, p.y, 1);
     if (dither){
-      const rs = document.documentElement.style;
-      rs.setProperty('--burst-x', splashPct((x + 1) / 2));
-      rs.setProperty('--burst-y', splashPct((-p.y + 1) / 2));
-      dither.classList.remove('tap');
-      void dither.offsetWidth;
-      dither.classList.add('tap');
+      css('--burst-x', splashPct((x + 1) / 2));
+      css('--burst-y', splashPct((-p.y + 1) / 2));
+      // Alternate two identical classes instead of remove -> reflow -> add: same restart, no
+      // forced layout. See #retro-dither.tap-a/.tap-b in <style>.
+      const cur = dither._tapAlt ? 'tap-b' : 'tap-a';
+      dither.classList.remove(dither._tapAlt ? 'tap-a' : 'tap-b');
+      dither._tapAlt = !dither._tapAlt;
+      dither.classList.add(cur);
       clearTimeout(dither._tapTimer);
-      dither._tapTimer = setTimeout(() => dither.classList.remove('tap'), 560);   // matches @keyframes degauss
+      dither._tapTimer = setTimeout(() => dither.classList.remove(cur), 560);   // matches @keyframes degauss
     }
 
-    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug')) return;
+    if (e.target.closest('button, a, input, label, #vol-hint, #hype, #rsvp, #dots, #debug, #perf')) return;
     if (x < 0) back(); else advance();
   });
 }
@@ -1848,10 +2046,11 @@ function initGate(){
    Debug scrubber (?debug) — also the verify/record seam
    ======================================================================= */
 function initDebug(){
-  if (!params.has('debug')) return;
+  if (!DEBUG) return;
   const bar = $('#debug'); bar.classList.add('on');
   const slider = $('#dbg-slider');
   state.started = true; state.paused = true;
+  document.body.classList.add('frozen');   // see body.frozen in <style>
   const seekTo = t => { state.held.scene = clamp(t, 0, DURATION - 0.001); };
   slider.oninput = () => seekTo(slider.value / 1000 * DURATION);
   $('#dbg-prev').onclick = () => { const i = Math.max(0, state.beat - 1); seekTo(BEATS[i].start + 0.001); };
@@ -1861,6 +2060,7 @@ function initDebug(){
 // Verify/export hook: land on a beat and hold (deterministic, no audio needed).
 window.__seek = i => {
   state.started = true; state.paused = true;
+  document.body.classList.add('frozen');   // see body.frozen in <style>
   state.held.scene = clamp(BEATS[clamp(i,0,BEATS.length-1)].start + 0.001, 0, DURATION - 0.001);
   state.held.ambient = i * 3.7;
 };
@@ -1868,18 +2068,131 @@ window.__seek = i => {
 /* =======================================================================
    Resize + main loop
    ======================================================================= */
+/* =======================================================================
+   ?perf — frame-time HUD with ablation toggles.
+
+   gl.drawArrays is asynchronous and EXT_disjoint_timer_query is unavailable on mobile, so no JS
+   timer can see the plasma's GPU cost. The only honest attribution on a phone is ABLATION: switch a
+   layer off, read the frame time, and the delta is what that layer costs. Hence the toggle board
+   rather than just a readout.
+
+   Everything but tick() sits behind `on`, so a normal visitor pays a handful of booleans a frame.
+   ======================================================================= */
+const perf = (() => {
+  const on = params.has('perf');
+  const N = 240;                                   // ~4 s at 60 fps
+  const ring = new Float32Array(N);
+  const scratch = [];
+  let n = 0, w = 0, last = 0, jank = 0, jankAt = 0, jankSec = 0, hudAt = 0;
+  const t = { js:0, draw:0, dom:0, css:0, ovl:0 };
+  const off = { plasma:false, dither:false, filter:false, trail:false, cssvars:false,
+                domwave:false, wc:false };
+
+  function tick(now){
+    if (last){
+      const dt = now - last;
+      if (dt > 0 && dt < 1000){                    // a tab-switch gap is not a slow frame
+        ring[w] = dt; w = (w + 1) % N; if (n < N) n++;
+        if (dt > 33) jank++;
+      }
+    }
+    last = now;
+    if (now - jankAt > 1000){ jankSec = jank; jank = 0; jankAt = now; }
+  }
+  function pct(q){
+    if (!n) return 0;
+    scratch.length = 0;
+    for (let i = 0; i < n; i++) scratch.push(ring[i]);
+    scratch.sort((a, b) => a - b);
+    return scratch[clamp(Math.round(q * (n - 1)), 0, n - 1)];
+  }
+  // The panel's own frame period, measured rather than assumed: ~8.3 at 120Hz, ~16.7 at 60Hz. The
+  // fastest 5% of frames is the best available estimate of "as fast as this display goes", which is
+  // what stops `frame 16.7` reading as bad news on a 60Hz phone.
+  const period = () => clamp(pct(0.05), 6.5, 17.5);
+  const reset = () => { n = 0; w = 0; last = 0; for (const k in t) t[k] = 0; };
+  // Exponential mean, not last-frame: these are sub-millisecond and a single sample is all noise.
+  const mark = (k, ms) => { t[k] = t[k] ? t[k] * 0.9 + ms * 0.1 : ms; };
+
+  let out = null;
+  if (on){
+    $('#perf').classList.add('on');
+    out = $('#perf-out');
+    // key, flag, body class (null = JS-side only), label
+    const TOG = [
+      ['P','plasma',  null,      'plasma.draw()'],
+      ['R','dither',  'dither',  '#retro-dither'],
+      ['F','filter',  'filter',  'its filter chain'],
+      ['T','trail',   'trail',   'the ::before follower'],
+      ['C','cssvars', null,      'the custom-property block'],
+      ['W','domwave', null,      'domWave.step()'],
+      ['B','wc',      'wc',      'will-change on .beat'],
+    ];
+    const bar = $('#perf-tog');
+    for (const [key, flag, cls, label] of TOG){
+      const b = document.createElement('button');
+      b.textContent = key; b.title = 'ablate ' + label;
+      b.setAttribute('aria-pressed', 'false');
+      b.onclick = () => {
+        off[flag] = !off[flag];
+        b.setAttribute('aria-pressed', String(off[flag]));
+        if (cls) document.body.classList.toggle('perf-no-' + cls, off[flag]);
+        reset();                                   // old frame times describe the old configuration
+      };
+      bar.appendChild(b);
+    }
+  }
+
+  function hud(now){
+    if (now - hudAt < 250) return;                 // one textContent write per 250ms, inside contain
+    hudAt = now;
+    const per = period(), p50 = pct(0.5), p95 = pct(0.95);
+    let miss = 0;
+    for (let i = 0; i < n; i++) if (ring[i] > per * 1.35) miss++;
+    const c = plasma && $('#plasma');
+    // js vs frame IS the attribution: a small js half against a long frame means the time is going
+    // to the GPU and the compositor, which nothing measurable from here can see.
+    const bound = t.js > p50 * 0.6 ? 'js ' : 'gpu';
+    out.textContent =
+      `fps ${(1000 / (p50 || 16.7)).toFixed(0)}/${(1000 / per).toFixed(0)}hz  frame ${p50.toFixed(1)}` +
+      `  p95 ${p95.toFixed(1)}  miss ${(n ? miss / n * 100 : 0).toFixed(0)}%\n` +
+      `js ${t.js.toFixed(1)}ms  draw ${t.draw.toFixed(1)}  dom ${t.dom.toFixed(1)}` +
+      `  css ${t.css.toFixed(2)}  ovl ${t.ovl.toFixed(2)}  bound:${bound}\n` +
+      `tier ${TIER}  plasma ${c ? c.width + 'x' + c.height : 'none'}` +
+      `  waves ${waves.count}/${Q.maxLive}  dom:${window.__domWaveState().mode}  jank/s ${jankSec}`;
+  }
+
+  return { on, off, tick, reset, mark, hud };
+})();
+
+let lastW = -1, lastH = -1, lastDpr = -1;
 function resize(){
   const stage = $('#stage');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
-  if (plasma) plasma.resize(w, h);
-  // the wave field is sized in CSS px — it converts every length to stage-height units itself
-  waves.measure(stage.clientWidth, stage.clientHeight);
-  if (domWave) domWave.resize(stage.clientWidth, stage.clientHeight, dpr);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);          // text / DOM refraction
+  // #plasma only. The shader is fully resolution-independent — uv is normalised by uRes (see the
+  // first line of main()) and the wave field is in stage-height units — so shrinking the buffer
+  // changes sampling density and nothing else: same framing, same wave, same uProgress ramp.
+  const pxDpr = Math.min(window.devicePixelRatio || 1, Q.dpr);
+  const cw = stage.clientWidth, ch = stage.clientHeight;
+  // The ResizeObserver on #stage fires for every URL-bar show/hide on mobile, and nothing below is
+  // cheap: two multi-MB drawing-buffer reallocations plus a domWave.resize() that unconditionally
+  // drops the texture and forces a full-page recapture.
+  if (cw === lastW && ch === lastH && dpr === lastDpr) return;
+  lastW = cw; lastH = ch; lastDpr = dpr;
+  if (plasma) plasma.resize(Math.max(1, Math.round(cw * pxDpr)),
+                            Math.max(1, Math.round(ch * pxDpr)));
+  // The wave field is sized in CSS px — it converts every length to stage-height units itself, and
+  // it must NEVER see pxDpr: these lengths are shared with #dom-out's refraction shader, so scaling
+  // them would change the wave's speed and wavelength and desync the text from the background.
+  waves.measure(cw, ch);
+  if (domWave) domWave.resize(cw, ch, dpr);
 }
 
-let lastFrame = 0, lastPalHue = -1;
+let lastFrame = 0, lastPalHue = -1, frameNo = 0;
 function frame(now){
+  frameNo++;                       // invalidates initInput's cached stage rect
+  perf.tick(now);                  // first, so nothing below can skip the ring buffer
+  const tJs = perf.on ? performance.now() : 0;
   state.ambientTime = ambientAt(now);
   state.sceneTime   = narrativeAt(now);
 
@@ -1939,19 +2252,37 @@ function frame(now){
   state.pointer.x = lerp(state.pointer.x, state.pointerTarget.x, 0.22);
   state.pointer.y = lerp(state.pointer.y, state.pointerTarget.y, 0.22);
 
-  // expose live inputs to CSS: tilt-reactive headings + music-pumped UI
-  const rs = document.documentElement.style;
-  rs.setProperty('--tx', state.tilt.x.toFixed(3));
-  rs.setProperty('--ty', state.tilt.y.toFixed(3));
-  rs.setProperty('--amp', state.ampOut.toFixed(3));
-  rs.setProperty('--spark-h', state.accentHue.toFixed(2));
-  // Chroma travels with the hue: sRGB can't hold the accent's full chroma all the way round, and
-  // letting the browser clip instead is exactly what would make luminance — and contrast — drift.
-  rs.setProperty('--spark-lc',
-    ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
-  // the splash rides the smoothed pointer — the same lerp the shader ripple uses
-  rs.setProperty('--tap-x', splashPct((state.pointer.x + 1) / 2));
-  rs.setProperty('--tap-y', splashPct((1 - state.pointer.y) / 2));
+  // Expose live inputs to CSS: tilt-reactive headings + music-pumped UI. Every write here goes
+  // through css(), which drops it when the formatted string has not changed — these were eight
+  // unconditional document-wide style invalidations per frame. Both lerps below are geometric, so
+  // with the gate they stop writing entirely ~0.5s after the pointer or the phone stops moving;
+  // before, they wrote forever.
+  const tCss = perf.on ? performance.now() : 0;
+  // Ablatable as one block by the ?perf [C] toggle: this is the main-thread half of the cost,
+  // and separating it from the GPU half is the whole point of the HUD.
+  if (!perf.off.cssvars){
+    const frozen = state.paused || reducedMotion;
+    const qAmp  = frozen ? 0 : 0.02;    // 50 levels; worst consumer is 16px of shadow blur -> 0.32px
+    const qTilt = frozen ? 0 : 0.005;   // worst consumer is translate(var(--tx) * 10px) -> 0.05px
+    css('--tx', qf(state.tilt.x, qTilt, 3));
+    css('--ty', qf(state.tilt.y, qTilt, 3));
+    css('--amp', qf(state.ampOut, qAmp, 3));
+    // Gated, not quantised: the value is constant except during the tween, so the gate alone takes
+    // it from 60 writes/s to ~5 per 1.74s and the frozen path stays byte-identical. The outer if() is
+    // also what stops fitChroma — an 18-step bisection — running 60x/s for a number that only moves
+    // with the hue. Chroma travels with the hue because sRGB can't hold the accent's full chroma all
+    // the way round, and letting the browser clip instead is what would make luminance drift.
+    const hue = state.accentHue.toFixed(2);
+    if (cssLast['--spark-h'] !== hue){
+      css('--spark-h', hue);
+      css('--spark-lc',
+        ACC_STOP.L + '% ' + fitChroma(ACC_STOP.L / 100, ACC_STOP.C, state.accentHue).toFixed(4));
+    }
+    // the splash rides the smoothed pointer — the same lerp the shader ripple uses
+    css('--tap-x', splashPct((state.pointer.x + 1) / 2));   // splashPct already rounds to 2dp
+    css('--tap-y', splashPct((1 - state.pointer.y) / 2));
+  }
+  if (perf.on) perf.mark('css', performance.now() - tCss);
 
   // one uniform upload per actual change, not per frame
   if (plasma && Math.abs(state.accentHue - lastPalHue) > 0.01){
@@ -1959,9 +2290,21 @@ function frame(now){
     lastPalHue = state.accentHue;
   }
 
-  if (plasma) plasma.draw();
-  if (domWave) domWave.step();
+  const tDraw = perf.on ? performance.now() : 0;
+  if (plasma && !perf.off.plasma) plasma.draw();
+  if (perf.on) perf.mark('draw', performance.now() - tDraw);
+
+  const tDom = perf.on ? performance.now() : 0;
+  if (domWave && !perf.off.domwave) domWave.step();
+  if (perf.on) perf.mark('dom', performance.now() - tDom);
+
+  const tOvl = perf.on ? performance.now() : 0;
   overlay.update();
+  if (perf.on){
+    perf.mark('ovl', performance.now() - tOvl);
+    perf.mark('js', performance.now() - tJs);
+    perf.hud(now);
+  }
   requestAnimationFrame(frame);
 }
 

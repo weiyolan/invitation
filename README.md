@@ -67,6 +67,12 @@ per-beat durations, the calendar-event details, and the `supabase` guest-list ke
 - `ACCENT.firstBeat` — which beat the first colour change lands on, 0-indexed on the beat
   grid. `10` is the 11th beat, i.e. the drop, measured as the intro's biggest transient. The
   accent holds on the designed teal until here, on every pass through the looping track.
+- `QUALITY` (just above `WAVE`) — the phone/desktop tier: `dpr` (plasma render resolution),
+  `octaves` (fbm detail), `dispersion` and `maxLive`. `dpr` and `octaves` want to move together:
+  the top octaves are what aliases once the sample rate drops, and aliasing crawls frame to frame,
+  which looks worse than the softness it would replace.
+- `WAVE.trailIdle` — ms of pointer silence before the follower blob fades out. Drop the timeout in
+  `track()` for the old behaviour, where it stayed under your last touch for the whole session.
 - `ACCENT.everyN` / `everyNHyper` — beats between colour changes, before and after an RSVP.
   The cycle is anchored at `firstBeat`, so with `everyN: 4` each change lands on the same
   position in the bar as the drop.
@@ -119,4 +125,33 @@ dates are right, the RSVP row is visible on every beat in the right order, zero
 console errors. Also regenerates `poster.jpg`.
 
 URL flags: `?debug` shows a timeline scrubber, `?clean` hides hints for screen
-recording.
+recording, `?perf` shows a frame-time HUD, `?q=high|low` forces a quality tier.
+
+## Performance
+
+Phones get a cheaper render than desktop, decided once at boot from
+`(pointer: coarse)`. On the low tier the plasma renders at CSS-pixel resolution
+instead of 2x and `fbm` drops from 5 octaves to 3 — together ~6.7x less fragment
+work — plus at most 3 concurrent tap waves and no chromatic dispersion on the
+text refraction. The text and UI are separate DOM at full device resolution and
+never soften. Everything is in the `QUALITY` block above `WAVE` in `index.html`;
+raise `dpr.low` to 1.5 if 1 reads too soft on your device.
+
+`?perf` is how you check any of this on a real phone. It shows p50/p95 frame time
+and `miss%` against the display's *measured* refresh period (so the numbers read
+correctly on both 60 Hz and 120 Hz), per-section sub-timers, and a
+`bound:js|gpu` verdict — a small `js` number against a long `frame` means the
+time is going to the GPU and the compositor, where no JS timer can see it.
+
+Below the readout is a row of ablation toggles, which is the only honest way to
+attribute GPU cost on mobile (`gl.drawArrays` is asynchronous and
+`EXT_disjoint_timer_query` does not exist there): switch a layer off, read the
+frame time, and the delta is what that layer costs. `[P]` plasma, `[R]`
+`#retro-dither`, `[F]` its filter chain, `[T]` the pointer-follower blob, `[C]`
+the per-frame custom properties, `[W]` the DOM refraction, `[B]` `will-change`.
+
+**Protocol.** Open `?perf`, tap to begin, then leave the screen alone for 10 s on
+the hero slide and record `frame / p95 / miss / bound`. Then tap each toggle for
+~3 s and write the `frame` delta down; those deltas are your budget. Compare
+`?q=high` against `?q=low` the same way. Phones thermal-throttle, so always
+compare from the same cold start on the same slide.
