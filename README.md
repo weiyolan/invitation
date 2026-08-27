@@ -15,7 +15,9 @@ play in sequence. It reacts to:
 - **Tap** → left half goes back a slide, right half skips ahead.
 - **The music** → its low end drives the visual pulse, and the plasma's liquid drift is
   locked to the 138 BPM beat grid: it surges on the kick and drags off it (1.45× / 0.55×,
-  with the average pace unchanged).
+  with the average pace unchanged). Through the track's near-silent intro it just drifts
+  smoothly and slowly instead — the surge changes gear in *on the drop*, the same 11th beat
+  the accent first rolls on.
 - **The colour** → the teal accent holds through the intro, changes for the first time
   *on the drop* (the 11th beat), then randomises every 4 beats — every 2 beats once
   somebody has RSVP'd. The whole composition rotates together — plasma field, UI accent
@@ -64,6 +66,12 @@ per-beat durations, the calendar-event details, and the `supabase` guest-list ke
   reproduce the original hexes exactly.
 - `PULSE.depth` (just below `WAVE`) — how hard the liquid surges on the kick. `0.45` is
   1.45× on the beat and 0.55× off it; `0` restores the old constant drift.
+- `PULSE.intro` — the plasma's drift rate before the drop, as a fraction of full speed. The track
+  opens on a near-silent intro, so the surge is held off until `ACCENT.firstBeat` (the same beat the
+  accent first rolls on, read from there so the two can't come apart): until then the field drifts
+  smoothly at `0.55×`, then changes gear. `1` removes the gear change and leaves only the surge
+  gating. The onset is continuous by construction — `warp()` is exactly zero at every beat line, so
+  switching the surge on at a beat boundary adds nothing at that instant.
 - `ACCENT.firstBeat` — which beat the first colour change lands on, 0-indexed on the beat
   grid. `10` is the 11th beat, i.e. the drop, measured as the intro's biggest transient. The
   accent holds on the designed teal until here, on every pass through the looping track.

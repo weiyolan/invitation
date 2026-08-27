@@ -813,6 +813,7 @@ const state = {
   audioLive: false,
   hyper: false,                  // latched when someone RSVPs
   flowTime: 0,                   // beat-warped plasma clock — what uTime actually gets
+  flowLag: 0,                    // seconds of drift given up to the slow intro (see PULSE.intro)
   accentHue: CONFIG.accentHue,   // live accent hue...
   hueTarget: CONFIG.accentHue,   // ...and where it's sliding to
   hueSlot: null,                 // which colour block we're in; null = not latched yet
@@ -904,13 +905,27 @@ function synthPulse(phase){ return Math.exp(-phase * 5.5); }
    and the GLSL never learns about the beat.
 
    We use the EXACT INTEGRAL of the speed profile rather than accumulating dt*speed. For
-   speed(p) = 1 + depth*cos(2pi p) that integral is sin(2pi p)/2pi, and it buys four things at
+   speed(p) = 1 + depth*cos(2pi p) that integral is sin(2pi p)/2pi, and it buys three things at
    once: the mean rate is exactly 1 (the liquid covers the same ground per minute as it always
-   did), the clock is continuous at every beat line (sin is 0 at both ends), it can never drift,
-   and — the reason it beats an accumulator — flowTime stays a pure function of absolute time, so
-   __seek / ?debug / reduced-motion stay deterministic for free.
+   did), the clock is continuous at every beat line (sin is 0 at both ends), and it can never
+   drift. It is also what makes the surge safe to switch on mid-track: zero at every beat line
+   means gating it at a beat boundary adds nothing at that instant, so only the derivative moves.
+
+   The surge is held off until the drop, because the track opens on a near-silent intro and there
+   is nothing there to pulse against. Before it, the plasma drifts smoothly at PULSE.intro of full
+   speed; the gear change lands on ACCENT.firstBeat, the same beat the accent first rolls on.
+
+   That slow intro is the one part of this clock that IS accumulated (state.flowLag), so flowTime
+   is no longer quite the pure function of absolute time it used to be. Determinism is now explicit
+   instead of free: a frozen clock accumulates nothing and adds no warp, leaving flowTime exactly
+   equal to state.ambientTime — see the frozenClock branch in frame().
    ======================================================================= */
-const PULSE = { depth: 0.45 };   // 1.45x on the kick, 0.55x off-beat. THE taste knob; 0 = as before.
+const PULSE = {
+  depth: 0.45,   // 1.45x on the kick, 0.55x off-beat, once the pulse is running. 0 = never surge.
+  intro: 0.55,   // drift rate before the drop, as a fraction of full speed. 1 = no gear change.
+                 // The drop beat itself is ACCENT.firstBeat, read at the use site in frame() rather
+                 // than duplicated here, so the pulse and the first colour change cannot come apart.
+};
 const TAU = 6.2831853;
 // The playback rate cancels in the derivative, so the SPEED swing is identical at 1.0x and 1.6x —
 // only the pulses get closer together.
@@ -2198,19 +2213,47 @@ function frame(now){
 
   // The wave field advances on real elapsed time, not state.ambientTime — that one freezes under
   // reduced motion and on the debug pause, and a wave mid-flight would freeze with it.
-  const dt = lastFrame ? Math.min(Math.max((now - lastFrame) / 1000, 0), 1 / 30) : 0;
+  // dtRaw is the unclamped elapsed time. The clamp on dt keeps a wave from teleporting across the
+  // stage after a stall, but it also means dt UNDERSTATES real time whenever a frame takes longer
+  // than 33ms — so anything that has to advance a clock at a true rate needs dtRaw instead. See
+  // PULSE.intro below: on a 10fps box the clamped dt made the slow intro run at 0.84x rather than
+  // the 0.55x it was asked for, because the lag accumulated a third as fast as it should.
+  const dtRaw = lastFrame ? Math.max((now - lastFrame) / 1000, 0) : 0;
+  const dt = Math.min(dtRaw, 1 / 30);
   lastFrame = now;
   waves.step(dt);
 
   // ---- one beat grid, three consumers: the plasma's pace, the fallback amp, the accent hue ----
   const beats = beat.at(now);
   const phase = frac(beats);
-  // The plasma surges on the kick and drags off it. Absolute, not accumulated, so this is a pure
-  // function of the ambient clock — and a frozen clock carries no warp at all, because there is no
-  // beat to surge on. That keeps ?debug, __seek and reduced-motion pixel-identical to a build
-  // without any of this, which is what stops the committed poster.jpg drifting.
-  state.flowTime = state.ambientTime +
-    (state.paused || reducedMotion ? 0 : warp(phase, 60 / CONFIG.BPM / audio.rate));
+  // Pace: a slow, perfectly smooth drift through the near-silent intro, then the surge switches on
+  // at the drop. The RATE is the only thing that changes, so the field's position stays continuous
+  // and it never teleports — and warp() is exactly zero at every beat line, so the surge appearing
+  // at phase 0 adds nothing at that instant. That is what makes the instant onset safe.
+  //
+  // Only the intro's slow-down is accumulated, and only across the ~4.35s intro itself. Everything
+  // after the drop is still wall-clock ambientTime, so the post-drop pace is exactly what it always
+  // was and cannot go frame-rate dependent the way a fully accumulated clock would. The intro lag
+  // uses dtRaw and not dt for the same reason — see the clamp note above.
+  //
+  // started is in the gate as well as the beat test: before the gate there is no audio, so beat.at()
+  // falls back to ambientTime / SEC() and `beats` would otherwise cross beat 10 about four seconds
+  // into page load for no musical reason. The track's loop seam needs no handling — `beats` sawtooths
+  // back below firstBeat when it wraps, so every pass gets the same slow intro and the same gear
+  // change, exactly as the accent guard below already does.
+  //
+  // A frozen clock is state.ambientTime and nothing else — not the warp, and NOT the intro lag.
+  // Subtracting the lag there was a real leak: ?debug and __seek only pause after the page has been
+  // running a moment, so flowLag has already accumulated a couple of hundred ms of intro by then,
+  // and every held frame came out shifted by it. Written as an explicit branch rather than relying
+  // on the lag happening to be zero, so no future call order can reintroduce that. This is what
+  // keeps ?debug, __seek and reduced-motion pixel-identical, and so stops poster.jpg drifting.
+  const frozenClock = state.paused || reducedMotion;
+  const dropped = state.started && !frozenClock && beats >= ACCENT.firstBeat;
+  if (!frozenClock && !dropped) state.flowLag += dtRaw * (1 - PULSE.intro);
+  state.flowTime = frozenClock ? state.ambientTime
+                               : state.ambientTime - state.flowLag +
+                                 (dropped ? warp(phase, 60 / CONFIG.BPM / audio.rate) : 0);
 
   // amp: follow the real music when it plays; the deterministic pulse now rides the same grid,
   // so before/without audio it pumps on-beat instead of free-running off it.
