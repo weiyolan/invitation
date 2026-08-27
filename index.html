@@ -922,10 +922,17 @@ function synthPulse(phase){ return Math.exp(-phase * 5.5); }
    ======================================================================= */
 const PULSE = {
   depth: 0.45,   // 1.45x on the kick, 0.55x off-beat, once the pulse is running. 0 = never surge.
-  intro: 0.55,   // drift rate before the drop, as a fraction of full speed. 1 = no gear change.
+  intro: 0.25,   // drift rate before the drop, as a fraction of full speed. 1 = no gear change.
                  // The drop beat itself is ACCENT.firstBeat, read at the use site in frame() rather
                  // than duplicated here, so the pulse and the first colour change cannot come apart.
 };
+// ?intro=<0..1> overrides the intro pace, so it can be dialled in on a real device without a
+// redeploy. Clamped deliberately: a negative rate would run flowTime backwards and break the
+// monotonicity the 60s seamless wrap depends on, and above 1 the "intro" would outrun the drop.
+// 0 is allowed and legitimate — the domain-warp drift stops dead, but the higher-frequency shimmer
+// terms (uTime*3.5, uTime*8.5) keep moving, so even that does not read as frozen.
+const introOverride = parseFloat(params.get('intro'));
+if (Number.isFinite(introOverride)) PULSE.intro = clamp(introOverride, 0, 1);
 const TAU = 6.2831853;
 // The playback rate cancels in the derivative, so the SPEED swing is identical at 1.0x and 1.6x —
 // only the pulses get closer together.

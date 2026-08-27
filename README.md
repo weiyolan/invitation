@@ -69,7 +69,7 @@ per-beat durations, the calendar-event details, and the `supabase` guest-list ke
 - `PULSE.intro` — the plasma's drift rate before the drop, as a fraction of full speed. The track
   opens on a near-silent intro, so the surge is held off until `ACCENT.firstBeat` (the same beat the
   accent first rolls on, read from there so the two can't come apart): until then the field drifts
-  smoothly at `0.55×`, then changes gear. `1` removes the gear change and leaves only the surge
+  smoothly at `0.25×`, then changes gear. `1` removes the gear change and leaves only the surge
   gating. The onset is continuous by construction — `warp()` is exactly zero at every beat line, so
   switching the surge on at a beat boundary adds nothing at that instant.
 - `ACCENT.firstBeat` — which beat the first colour change lands on, 0-indexed on the beat
@@ -133,7 +133,8 @@ dates are right, the RSVP row is visible on every beat in the right order, zero
 console errors. Also regenerates `poster.jpg`.
 
 URL flags: `?debug` shows a timeline scrubber, `?clean` hides hints for screen
-recording, `?perf` shows a frame-time HUD, `?q=high|low` forces a quality tier.
+recording, `?perf` shows a frame-time HUD, `?q=high|low` forces a quality tier,
+`?intro=<0..1>` overrides the plasma's pre-drop drift rate for tuning on a device.
 
 ## Performance
 
