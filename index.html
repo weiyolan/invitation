@@ -1150,16 +1150,26 @@ ${WAVE_GLSL}
                      : mix(uPal[1], uPal[2], t * 2.0 - 1.0);
     }
     void main(){
-      vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-      uv += uTilt * 0.15;
+      // screenUv is where the finger actually is; uv is the parallaxed field. The tilt is meant to
+      // shift the plasma FIELD, not the place the user touched — feeding the tilted uv to waveGrad
+      // dragged the tap ring (and the pointer ring below) off the finger by uTilt * 0.15, i.e. up to
+      // 137px on a 915px stage. Worst in an upright hold, because tiltTarget.y = (beta - 45)/45
+      // saturates at 1.0 around beta 90, so the offset sat pinned at maximum rather than wobbling.
+      // #dom-out's refraction shader always fed waveGrad the untilted coordinate, so the text and
+      // the background rippled around two different centres; the comment there claiming "exactly
+      // the plasma's space" only becomes true with this.
+      vec2 screenUv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+      vec2 uv = screenUv + uTilt * 0.15;
       // vec2 uv0 = uv;   // was the undisplaced anchor for pointerGlow — commented out with it
       // uPointer is NDC [-1..1]; uv is normalised by height, so the pointer has to be scaled into
       // uv units (half-extent .5 vertically, .5*aspect horizontally) or it lands off-screen.
-      vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0);
+      // Lift the pointer INTO the tilted space rather than un-tilting uv here: the standing ring
+      // stays under the finger while still being warped by the tap wave downstream, as before.
+      vec2 pointerUv = uPointer * 0.5 * vec2(uRes.x / uRes.y, 1.0) + uTilt * 0.15;
       // Travelling wave train from taps. Distinct from the 'ripple' below, which is the standing
       // ring that sits under the pointer — this one leaves the tap point and crosses the stage.
       // Sampled from the tilted uv, same as the pointer, then warps everything downstream.
-      vec2 wg = waveGrad(uv, uRes.x / uRes.y);
+      vec2 wg = waveGrad(screenUv, uRes.x / uRes.y);
       uv += wg * uWaveB.y;
       // domain-warped fbm advected by a drifting flow → the field physically moves like
       // billowing smoke. Flow uses only integer harmonics of the 60s uTime wrap, so it loops
